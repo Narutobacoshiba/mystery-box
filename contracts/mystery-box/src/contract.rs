@@ -7,8 +7,11 @@ use cosmwasm_std::{
 };
 use cw2::set_contract_version;
 
-//use cw721::{Cw721QueryMsg, Expiration as Cw721Expiration};
-use cw721_base::{msg::InstantiateMsg as Cw721InstantiateMsg};
+use cw721_base::MintMsg;
+use cw721_base::{
+    msg::InstantiateMsg as Cw721InstantiateMsg,
+    msg::ExecuteMsg as Cw721ExecuteMsg
+};
 
 use cw_utils::parse_reply_instantiate_data;
 
@@ -22,7 +25,9 @@ use crate::state::{
     MYSTERY_BOXS, MysteryBox,
 };
 use crate::utils::{
-    make_job_id, convert_datetime_string
+    make_job_id, make_token_id,
+    convert_datetime_string,
+    uint256_2_usize
 };
 
 // version info for migration info
@@ -98,6 +103,14 @@ pub fn execute(
         } => execute_create_mystery_box(deps,env,info,name,start_time,end_time,
                     rarity_distribution,tokens_uri,price,denom),
 
+        ExecuteMsg::RemoveMysteryBox {
+            box_id,
+        } => execute_remove_mystery_box(deps,env,info,box_id),
+
+        ExecuteMsg::SetWhiteList { 
+            list 
+        } => execute_set_white_list(deps,env,info,list),
+
         ExecuteMsg::ReceiveHexRandomness {
             request_id,
             randomness,
@@ -159,7 +172,7 @@ fn execute_create_mystery_box(
         return Err(ContractError::InvalidEndTime{});
     } 
 
-    if !rarity_distribution.check_rate() {
+    if !rarity_distribution.check_rate_and_sort() {
         return Err(ContractError::InvalidRarityRate{});
     }
 
@@ -179,6 +192,55 @@ fn execute_create_mystery_box(
                 .add_attribute("create_time", block_time.to_string()))
 }
 
+fn execute_remove_mystery_box (
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    box_id: String,
+) -> Result<Response, ContractError> {
+
+    let config = CONFIG.load(deps.storage)?;
+
+    if config.owner != info.sender {
+        return Err(ContractError::Unauthorized{});
+    }
+
+    if !MYSTERY_BOXS.has(deps.storage, box_id.clone()) {
+        return Err(ContractError::CustomError{val: String::from("box with id don't exist")});
+    }
+
+    let mystery_box = MYSTERY_BOXS.load(deps.storage, box_id.clone())?;
+
+    let block_time = env.block.time;
+
+    if block_time >= mystery_box.start_time && block_time <= mystery_box.end_time {
+        return Err(ContractError::CustomError{val: String::from("mystery box in process, cannot remove")});
+    }
+
+    MYSTERY_BOXS.remove(deps.storage, box_id.clone());
+
+    Ok(Response::new().add_attribute("action", "remove_mystery_box")
+                .add_attribute("box_id", box_id)
+                .add_attribute("owner", config.owner))
+}
+
+fn execute_set_white_list(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    list: Vec<String>
+) -> Result<Response, ContractError> {
+
+    let config = CONFIG.load(deps.storage)?;
+
+    if config.owner != info.sender {
+        return Err(ContractError::Unauthorized{});
+    }
+
+    return Ok(Response::new().add_attribute("action", "set_white_list")
+                .add_attribute("owner", config.owner))
+}
+
 fn execute_open_box(
     deps: DepsMut,
     env: Env,
@@ -186,7 +248,11 @@ fn execute_open_box(
     box_id: String,
 ) -> Result<Response, ContractError> {
 
-    let mystery_box = MYSTERY_BOXS.load(deps.storage, box_id)?;
+    if !MYSTERY_BOXS.has(deps.storage, box_id.clone()) {
+        return Err(ContractError::CustomError{val: String::from("box with id don't exist")});
+    }
+
+    let mystery_box = MYSTERY_BOXS.load(deps.storage, box_id.clone())?;
 
     // check denom and get amount
     let denom = mystery_box.denom;
@@ -202,7 +268,7 @@ fn execute_open_box(
 
     let fee = mystery_box.price;
     if sent_amount < fee {
-        return Err(ContractError::CustomError{val: String::from("Insufficient fee! required ") 
+        return Err(ContractError::CustomError{val: String::from("Insufficient fee! required") 
                                                 + &fee.to_string() + &denom});
     }
 
@@ -219,7 +285,7 @@ fn execute_open_box(
     }
 
     // generate job id for receiving randomness
-    let job_id = make_job_id(box_id, info.sender.to_string());
+    let job_id = make_job_id(box_id.clone(), info.sender.to_string());
 
     // save request open box job, wait for randomness
     JOBS.save(deps.storage, job_id.clone(), &Job{
@@ -269,14 +335,20 @@ fn execute_receive_hex_randomness(
         return Err(ContractError::CustomError{val:"Job with id does't exist!".to_string()});
     }
     
+    // get job by request id
     let job = JOBS.load(deps.storage, request_id.clone())?;
+
+    // get mystery box by id
+    let mystery_box = MYSTERY_BOXS.load(deps.storage, job.box_id)?;
 
     // check if randomness valid
     if randomness.len() != 1 {
         return Err(ContractError::InvalidRandomness{});
     }
-    
-    let randomness: [u8; 32] = hex::decode(randomness[0])
+
+    let token_id = make_token_id(job.box_id.clone(), randomness[0].clone());
+
+    let randomness: [u8; 32] = hex::decode(randomness[0].clone())
             .map_err(|_| ContractError::InvalidRandomness{})?
             .as_slice().try_into()
             .map_err(|_| ContractError::InvalidRandomness{})?;
@@ -286,8 +358,7 @@ fn execute_receive_hex_randomness(
     let rarity_check = random_number.checked_rem(Uint256::from_u128(MAX_RANGE_RANDOM))
                     .map_err(|_| ContractError::Uint256OperatorError{})?;
 
-    // get mystery box by id
-    let mystery_box = MYSTERY_BOXS.load(deps.storage, job.box_id)?;
+    let rarity = mystery_box.rarity_distribution.get_rate(rarity_check, Uint256::from_u128(MAX_RANGE_RANDOM));
 
     let tokens_uri = mystery_box.tokens_uri;
 
@@ -295,8 +366,24 @@ fn execute_receive_hex_randomness(
     let tokens_uri_index = random_number.checked_rem(Uint256::from_u128(tokens_uri.len() as u128))
                     .map_err(|_| ContractError::Uint256OperatorError{})?;
 
-    Ok(Response::new().add_attribute("action", "receive_hex_randomness")
-                .add_attribute("token_id", random_token_index.to_string()))
+    // create mint message NFT for the sender
+    let mint_msg = WasmMsg::Execute {
+        contract_addr: supplier_address.to_string(),
+        msg: to_binary(&Cw721ExecuteMsg::Mint(MintMsg {
+            token_id: token_id.clone(),
+            owner: job.sender.clone().to_string(),
+            token_uri: Some(tokens_uri[uint256_2_usize(tokens_uri_index).unwrap()].clone()),
+            extension: None,
+        }))?,
+        funds: vec![],
+    };
+
+    let res = Response::new().add_message(mint_msg);
+
+    Ok(Response::new().add_message(mint_msg)
+                .add_attribute("action", "receive_hex_randomness")
+                .add_attribute("token_id", token_id)
+                .add_attribute("minter", job.sender.to_string()))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]

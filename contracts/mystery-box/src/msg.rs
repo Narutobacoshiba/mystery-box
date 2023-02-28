@@ -38,6 +38,14 @@ pub enum ExecuteMsg {
         denom: String,
     },
 
+    RemoveMysteryBox {
+        box_id: String, // id of mystery box
+    },
+
+    SetWhiteList {
+        list: Vec<String> // list of wallet that can create a mystery box
+    },
+
     //receive aurand randomness
     ReceiveHexRandomness {
         request_id: String,
