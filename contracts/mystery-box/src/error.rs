@@ -12,6 +12,12 @@ pub enum ContractError {
     #[error("InvalidRandomness")]
     InvalidRandomness{},
 
+    #[error("PriceInsufficient")]
+    PriceInsufficient{},
+
+    #[error("ZeroRarity")]
+    ZeroRarity{},
+
     #[error("InvalidAddress")]
     InvalidAddress{},
     
@@ -39,6 +45,12 @@ pub enum ContractError {
     #[error("MysteryBoxNotStart")]
     MysteryBoxNotStart{},
     
+    #[error("InvalidDecimalFormat")]
+    InvalidDecimalFormat{},
+
+    #[error("DecimalOperationFail")]
+    DecimalOperationFail{},
+
     #[error("Custom Error val: {val:?}")]
     CustomError { val: String },
 }

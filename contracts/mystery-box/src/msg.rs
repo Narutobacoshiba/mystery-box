@@ -65,3 +65,8 @@ pub enum AurandExecuteMsg {
 #[derive(QueryResponses)]
 pub enum QueryMsg {
 }
+
+#[cw_serde]
+pub struct Metadata {
+    pub rarity: String,
+}

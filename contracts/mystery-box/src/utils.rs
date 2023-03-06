@@ -33,12 +33,15 @@ pub fn convert_datetime_string(data: String) -> Result<Timestamp, ContractError>
     return Ok(Timestamp::from_nanos(date_time.timestamp_nanos() as u64));
 }
 
+// max usize value 2 ^ 64 - 1
+const MAX_USIZE: u128 = 18_446_744_073_709_551_615u128;
+// convert uint256 type to usize type
 pub fn uint256_2_usize(u: Uint256) -> StdResult<usize> {
-    if u > Uint256::from_u128(18_446_744_073_709_551_615u128) {
+    if u > Uint256::from_u128(MAX_USIZE) {
         return Err(StdError::GenericErr { msg: String::from("to large number") });
     }
 
     let bytes = u.to_le_bytes();
-    return Ok(u64::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3], 
-                bytes[4], bytes[5], bytes[6], bytes[7]]) as usize);
+    return Ok(usize::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3], 
+                bytes[4], bytes[5], bytes[6], bytes[7]]));
 }

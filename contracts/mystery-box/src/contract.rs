@@ -7,10 +7,13 @@ use cosmwasm_std::{
 };
 use cw2::set_contract_version;
 
-use cw721_base::MintMsg;
+use cw721_base::MintMsg ;
+use cw721_rarity::{
+    ExecuteMsg as Cw721RarityExecuteMsg,
+    Metadata as Cw721RarityMetadata,
+};
 use cw721_base::{
-    msg::InstantiateMsg as Cw721InstantiateMsg,
-    msg::ExecuteMsg as Cw721ExecuteMsg
+    msg::InstantiateMsg as Cw721InstantiateMsg
 };
 
 use cw_utils::parse_reply_instantiate_data;
@@ -22,7 +25,7 @@ use crate::msg::{
 use crate::state::{
     CONFIG, Config,
     JOBS,Job, RarityDistribution,
-    MYSTERY_BOXS, MysteryBox,
+    MYSTERY_BOXS, MysteryBox, WHITE_LIST,
 };
 use crate::utils::{
     make_job_id, make_token_id,
@@ -45,7 +48,7 @@ pub fn instantiate(
     _info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
-    set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION);
+    set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
     let aurand_addr = optional_addr_validate(deps.api, msg.aurand_address.clone())?;
     let owner_addr = optional_addr_validate(deps.api, msg.owner.clone())?;
@@ -109,7 +112,7 @@ pub fn execute(
 
         ExecuteMsg::SetWhiteList { 
             list 
-        } => execute_set_white_list(deps,env,info,list),
+        } => execute_set_white_list(deps,info,list),
 
         ExecuteMsg::ReceiveHexRandomness {
             request_id,
@@ -172,7 +175,7 @@ fn execute_create_mystery_box(
         return Err(ContractError::InvalidEndTime{});
     } 
 
-    if !rarity_distribution.check_rate_and_sort() {
+    if !rarity_distribution.check_rate()? {
         return Err(ContractError::InvalidRarityRate{});
     }
 
@@ -185,11 +188,12 @@ fn execute_create_mystery_box(
         price, 
         denom, 
         create_time: block_time 
-    });
+    })?;
 
     Ok(Response::new().add_attribute("action", "create_mystery_box")
                 .add_attribute("box_id", "id")
                 .add_attribute("create_time", block_time.to_string()))
+
 }
 
 fn execute_remove_mystery_box (
@@ -226,7 +230,6 @@ fn execute_remove_mystery_box (
 
 fn execute_set_white_list(
     deps: DepsMut,
-    env: Env,
     info: MessageInfo,
     list: Vec<String>
 ) -> Result<Response, ContractError> {
@@ -235,6 +238,12 @@ fn execute_set_white_list(
 
     if config.owner != info.sender {
         return Err(ContractError::Unauthorized{});
+    }
+
+    for it in list {
+        let addr = optional_addr_validate(deps.api, it)?;
+        
+        WHITE_LIST.save(deps.storage, addr, &true)?;
     }
 
     return Ok(Response::new().add_attribute("action", "set_white_list")
@@ -291,7 +300,7 @@ fn execute_open_box(
     JOBS.save(deps.storage, job_id.clone(), &Job{
         box_id: box_id.clone(),
         sender: info.sender,
-    });
+    })?;
 
     let config = CONFIG.load(deps.storage)?;
     // request randomness from aurand contract
@@ -336,17 +345,17 @@ fn execute_receive_hex_randomness(
     }
     
     // get job by request id
-    let job = JOBS.load(deps.storage, request_id.clone())?;
+    let Job{box_id, sender}= JOBS.load(deps.storage, request_id.clone())?;
 
     // get mystery box by id
-    let mystery_box = MYSTERY_BOXS.load(deps.storage, job.box_id)?;
+    let mut mystery_box = MYSTERY_BOXS.load(deps.storage, box_id.clone())?;
 
     // check if randomness valid
     if randomness.len() != 1 {
         return Err(ContractError::InvalidRandomness{});
     }
 
-    let token_id = make_token_id(job.box_id.clone(), randomness[0].clone());
+    let token_id = make_token_id(box_id.clone(), randomness[0].clone());
 
     let randomness: [u8; 32] = hex::decode(randomness[0].clone())
             .map_err(|_| ContractError::InvalidRandomness{})?
@@ -358,36 +367,42 @@ fn execute_receive_hex_randomness(
     let rarity_check = random_number.checked_rem(Uint256::from_u128(MAX_RANGE_RANDOM))
                     .map_err(|_| ContractError::Uint256OperatorError{})?;
 
-    let rarity = mystery_box.rarity_distribution.get_rate(rarity_check, Uint256::from_u128(MAX_RANGE_RANDOM));
+    let (index, rarity) = mystery_box.rarity_distribution.get_rarity(rarity_check, Uint256::from_u128(MAX_RANGE_RANDOM))?;
+    mystery_box.rarity_distribution.update_rarity(index, 1)?;
 
-    let tokens_uri = mystery_box.tokens_uri;
+    let tokens_uri = mystery_box.tokens_uri.clone();
 
     // random token url
     let tokens_uri_index = random_number.checked_rem(Uint256::from_u128(tokens_uri.len() as u128))
                     .map_err(|_| ContractError::Uint256OperatorError{})?;
 
+    let extension = Some(Cw721RarityMetadata {
+        rarity: rarity.name, 
+        ..Cw721RarityMetadata::default()
+    });
     // create mint message NFT for the sender
     let mint_msg = WasmMsg::Execute {
         contract_addr: supplier_address.to_string(),
-        msg: to_binary(&Cw721ExecuteMsg::Mint(MintMsg {
+        msg: to_binary(&Cw721RarityExecuteMsg::Mint(MintMsg {
             token_id: token_id.clone(),
-            owner: job.sender.clone().to_string(),
+            owner: sender.clone().to_string(),
             token_uri: Some(tokens_uri[uint256_2_usize(tokens_uri_index).unwrap()].clone()),
-            extension: None,
+            extension,
         }))?,
         funds: vec![],
     };
 
-    let res = Response::new().add_message(mint_msg);
-
+    MYSTERY_BOXS.save(deps.storage, box_id.clone(), &mystery_box)?;
+    
     Ok(Response::new().add_message(mint_msg)
                 .add_attribute("action", "receive_hex_randomness")
                 .add_attribute("token_id", token_id)
-                .add_attribute("minter", job.sender.to_string()))
+                .add_attribute("minter", sender.to_string())
+                )
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
+pub fn query(_deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     // TODO: add query for MarketplaceInfo here
     match msg {
     }
