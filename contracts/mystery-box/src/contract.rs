@@ -28,7 +28,7 @@ use crate::state::{
     MYSTERY_BOXS, MysteryBox, WHITE_LIST,
 };
 use crate::utils::{
-    make_job_id, make_token_id,
+    make_id,
     convert_datetime_string,
     uint256_2_usize
 };
@@ -179,7 +179,12 @@ fn execute_create_mystery_box(
         return Err(ContractError::InvalidRarityRate{});
     }
 
-    MYSTERY_BOXS.save(deps.storage, String::from("id"), &MysteryBox { 
+    let box_id = make_id(vec![
+        info.sender.to_string(), 
+        env.block.time.to_string()
+    ]);
+
+    MYSTERY_BOXS.save(deps.storage, box_id.clone(), &MysteryBox { 
         name, 
         start_time, 
         end_time, 
@@ -191,7 +196,7 @@ fn execute_create_mystery_box(
     })?;
 
     Ok(Response::new().add_attribute("action", "create_mystery_box")
-                .add_attribute("box_id", "id")
+                .add_attribute("box_id", box_id)
                 .add_attribute("create_time", block_time.to_string()))
 
 }
@@ -294,7 +299,7 @@ fn execute_open_box(
     }
 
     // generate job id for receiving randomness
-    let job_id = make_job_id(box_id.clone(), info.sender.to_string());
+    let job_id = make_id(vec![box_id.clone(), info.sender.to_string()]);
 
     // save request open box job, wait for randomness
     JOBS.save(deps.storage, job_id.clone(), &Job{
@@ -355,7 +360,7 @@ fn execute_receive_hex_randomness(
         return Err(ContractError::InvalidRandomness{});
     }
 
-    let token_id = make_token_id(box_id.clone(), randomness[0].clone());
+    let token_id = make_id(vec![box_id.clone(), randomness[0].clone()]);
 
     let randomness: [u8; 32] = hex::decode(randomness[0].clone())
             .map_err(|_| ContractError::InvalidRandomness{})?
@@ -386,7 +391,7 @@ fn execute_receive_hex_randomness(
         msg: to_binary(&Cw721RarityExecuteMsg::Mint(MintMsg {
             token_id: token_id.clone(),
             owner: sender.clone().to_string(),
-            token_uri: Some(tokens_uri[uint256_2_usize(tokens_uri_index).unwrap()].clone()),
+            token_uri: Some(tokens_uri[uint256_2_usize(tokens_uri_index)?].clone()),
             extension,
         }))?,
         funds: vec![],
@@ -407,5 +412,7 @@ pub fn query(_deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
     }
 }
+
+//https://academy.binance.com/en/articles/what-are-nft-mystery-boxes-and-how-do-they-work
 
 

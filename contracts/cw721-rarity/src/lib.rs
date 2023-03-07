@@ -3,8 +3,8 @@ use cosmwasm_std::Empty;
 pub use cw721_base::{ContractError, InstantiateMsg, MinterResponse};
 
 // Version info for migration
-const CONTRACT_NAME: &str = "crates.io:cw721-rarity";
-const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
+const _CONTRACT_NAME: &str = "crates.io:cw721-rarity";
+const _CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[cw_serde]
 pub struct Trait {
@@ -51,7 +51,7 @@ pub mod entry {
         info: MessageInfo,
         msg: InstantiateMsg,
     ) -> StdResult<Response> {
-        cw2::set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
+        cw2::set_contract_version(deps.storage, _CONTRACT_NAME, _CONTRACT_VERSION)?;
 
         Cw721MetadataContract::default().instantiate(deps.branch(), env, info, msg)
     }

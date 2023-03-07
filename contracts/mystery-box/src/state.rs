@@ -47,9 +47,8 @@ const RATE_MODIFY_EXPONENT: u32 = 6u32;
 const MAX_EXPONENT: u32 = 47u32;
 
 /// Calculate rate modify for a type of rarity using equation:
-/// 
-///     rate modify = (1 / (1 + e ^-(n / slip_rate))) ^ RATE_MODIFY_EXPONENT
-/// 
+///     
+///    let rate_modifier = (1 / (1 + e ^-(n / slip_rate))) ^ RATE_MODIFY_EXPONENT 
 /// 
 /// 
 /// e: Euler's number (~2.71828)
@@ -140,12 +139,12 @@ impl RarityDistribution {
 
         if let Some(com) = self.vecs.last().cloned() {
             if com.supply > 0 {
-                return Ok((self.vecs.len() - 1, com));
+                Ok((self.vecs.len() - 1, com))
             }else {
-                return Err(ContractError::PriceInsufficient{});
+                Err(ContractError::PriceInsufficient{})
             }
         }else {
-            return Err(ContractError::ZeroRarity{});
+            Err(ContractError::ZeroRarity{})
         }
     }
 
@@ -371,7 +370,6 @@ mod unit_tests {
         assert_eq!(dist.total_supply(), 10000u64);
     }
 
-
     #[test]
     fn test_get_rarity() {
         let mut vecs: Vec<Rarity> = Vec::new();
@@ -472,5 +470,37 @@ mod unit_tests {
 
         assert_eq!(dist.vecs[0].supply, 0);
         assert!(dist.vecs[0].rate == Decimal::zero());
+    }
+
+    #[test]
+    fn test_check_rate_with_invalid_bigint() {
+        let mut vecs: Vec<Rarity> = Vec::new();
+        
+        vecs.push(Rarity{
+            name: "limited".to_string(),
+            rate: Decimal::from_str("0.09").unwrap(),
+            supply: 990u32,
+            slip_rate: 1,
+        });
+        
+        vecs.push(Rarity{
+            name: "common".to_string(),
+            rate: Decimal::from_str("0.90").unwrap(),
+            supply: 9000u32,
+            slip_rate: 0,
+        });
+
+        vecs.push(Rarity{
+            name: "rare".to_string(),
+            rate: Decimal::from_str("0.01").unwrap(),
+            supply: 10u32,
+            slip_rate: 1,
+        });
+
+        let dist: RarityDistribution = RarityDistribution {
+            vecs
+        };
+
+
     }
 }
