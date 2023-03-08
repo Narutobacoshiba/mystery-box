@@ -39,9 +39,6 @@ pub enum ContractError {
     #[error("InvalidRarityRate")]
     InvalidRarityRate{},
 
-    #[error("MysteryBoxTimeOut")]
-    MysteryBoxTimeOut{},
-
     #[error("MysteryBoxNotStart")]
     MysteryBoxNotStart{},
     
@@ -50,6 +47,12 @@ pub enum ContractError {
 
     #[error("DecimalOperationFail")]
     DecimalOperationFail{},
+
+    #[error("BoxWithIdNotExist")]
+    BoxWithIdNotExist{},
+
+    #[error("MysteryBoxExpired")]
+    MysteryBoxExpired{},
 
     #[error("Custom Error val: {val:?}")]
     CustomError { val: String },

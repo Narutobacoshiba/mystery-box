@@ -1,5 +1,5 @@
 use cosmwasm_schema::{cw_serde,QueryResponses};
-use cosmwasm_std::Uint128;
+use cosmwasm_std::{Uint128, Coin};
 use crate::state::RarityDistribution;
 
 #[cw_serde]
@@ -11,7 +11,9 @@ pub struct InstantiateMsg {
     pub owner: String,
 
     // code id of a cw-721 base contract
-    pub supplier_code_id: u64,
+    pub box_supplier: String,
+
+    pub nft_supplier: String,
 
     // name of cw721 contract
     pub name: String,
@@ -26,16 +28,24 @@ pub enum ExecuteMsg {
     //unbox mystery box
     OpenBox {
         box_id: String,
+        contract_address: String,
+        token_id: String,
     },
 
+    // buy a mystery box
+    BuyBox {
+        box_id: String,
+    },
+
+    // generate a mystery box
     CreateMysteryBox {
         name: String,
         start_time: String,
         end_time: String,
         rarity_distribution: RarityDistribution,
-        tokens_uri: Vec<String>,
-        price: Uint128,
-        denom: String,
+        token_uri: String,
+        total_supply: u32,
+        fund: Coin,
     },
 
     RemoveMysteryBox {

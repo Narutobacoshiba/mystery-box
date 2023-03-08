@@ -1,7 +1,7 @@
 use std::{str::FromStr};
 
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Addr, Timestamp, Decimal, Uint128, Uint256};
+use cosmwasm_std::{Addr, Timestamp, Decimal, Uint128, Uint256, Coin};
 use cw_storage_plus::{Item, Map};
 
 use crate::ContractError;
@@ -180,13 +180,16 @@ pub struct MysteryBox {
     pub start_time: Timestamp,
     pub end_time: Timestamp,
     pub rarity_distribution: RarityDistribution,
-    pub tokens_uri: Vec<String>,
-    pub price: Uint128,
-    pub denom: String,
+    pub token_uri: String,
+    pub tokens_id: Vec<u32>,
+    pub total_supply: u32,
+    pub fund: Coin,
     pub create_time: Timestamp,
 }
 
 pub const MYSTERY_BOXS: Map<String, MysteryBox> = Map::new("mystery boxs");
+
+pub const BOXS_OWNER: Map<String, Vec<u32>> = Map::new("boxs owner");
 
 pub const WHITE_LIST: Map<Addr, bool> = Map::new("white list");
 

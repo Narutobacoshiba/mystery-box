@@ -3,7 +3,7 @@ use cosmwasm_std::entry_point;
 use cosmwasm_std::{
     to_binary, Binary, Deps, DepsMut, Env, Addr, Api, SubMsg,
     MessageInfo, Response, StdResult, WasmMsg, Uint256, ReplyOn,
-    Reply, Timestamp, Uint128,
+    Reply, Timestamp, Uint128, Coin,
 };
 use cw2::set_contract_version;
 
@@ -93,18 +93,24 @@ pub fn execute(
     match msg {
         ExecuteMsg::OpenBox {
             box_id,
-        } => execute_open_box(deps,env,info,box_id),
+            contract_address,
+            token_id,
+        } => execute_open_box(deps,env,info,box_id, contract_address, token_id),
+
+        ExecuteMsg::BuyBox { 
+            box_id 
+        }   => execute_buy_box(deps,env,info,box_id),
 
         ExecuteMsg::CreateMysteryBox { 
             name, 
             start_time, 
             end_time, 
             rarity_distribution, 
-            tokens_uri,
-            price,
-            denom,
+            token_uri,
+            total_supply,
+            fund,
         } => execute_create_mystery_box(deps,env,info,name,start_time,end_time,
-                    rarity_distribution,tokens_uri,price,denom),
+                    rarity_distribution,token_uri,total_supply,fund),
 
         ExecuteMsg::RemoveMysteryBox {
             box_id,
@@ -155,9 +161,9 @@ fn execute_create_mystery_box(
     start_time: String,
     end_time: String,
     rarity_distribution: RarityDistribution,
-    tokens_uri: Vec<String>,
-    price: Uint128,
-    denom: String,
+    token_uri: String,
+    total_supply: u32,
+    fund: Coin,
 ) -> Result<Response, ContractError> {
 
     let config = CONFIG.load(deps.storage)?;
@@ -183,15 +189,16 @@ fn execute_create_mystery_box(
         info.sender.to_string(), 
         env.block.time.to_string()
     ]);
-
+    
     MYSTERY_BOXS.save(deps.storage, box_id.clone(), &MysteryBox { 
         name, 
         start_time, 
         end_time, 
         rarity_distribution, 
-        tokens_uri, 
-        price, 
-        denom, 
+        token_uri, 
+        tokens_id: Vec::new(),
+        total_supply,
+        fund,
         create_time: block_time 
     })?;
 
@@ -255,21 +262,20 @@ fn execute_set_white_list(
                 .add_attribute("owner", config.owner))
 }
 
-fn execute_open_box(
+fn execute_buy_box(
     deps: DepsMut,
     env: Env,
     info: MessageInfo,
     box_id: String,
 ) -> Result<Response, ContractError> {
-
     if !MYSTERY_BOXS.has(deps.storage, box_id.clone()) {
-        return Err(ContractError::CustomError{val: String::from("box with id don't exist")});
+        return Err(ContractError::BoxWithIdNotExist{});
     }
 
     let mystery_box = MYSTERY_BOXS.load(deps.storage, box_id.clone())?;
 
     // check denom and get amount
-    let denom = mystery_box.denom;
+    let denom = mystery_box.fund.denom;
     let matching_coin = info.funds.iter().find(|fund| fund.denom.eq(&denom));
     let sent_amount: Uint128 = match matching_coin {
         Some(coin) => coin.amount,
@@ -280,11 +286,36 @@ fn execute_open_box(
         }
     };
 
-    let fee = mystery_box.price;
-    if sent_amount < fee {
+    let price = mystery_box.fund.amount;
+    if sent_amount < price {
         return Err(ContractError::CustomError{val: String::from("Insufficient fee! required") 
-                                                + &fee.to_string() + &denom});
+                                                + &price.to_string() + &denom});
     }
+
+    let block_time = env.block.time;
+    if block_time >= mystery_box.end_time {
+        return Err(ContractError::MysteryBoxExpired{});
+    }
+
+
+
+    Ok(Response::new())
+}
+
+fn execute_open_box(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    box_id: String,
+    contract_address: String,
+    token_id: String,
+) -> Result<Response, ContractError> {
+
+    if !MYSTERY_BOXS.has(deps.storage, box_id.clone()) {
+        return Err(ContractError::BoxWithIdNotExist{});
+    }
+
+    let mystery_box = MYSTERY_BOXS.load(deps.storage, box_id.clone())?;
 
     let block_time = env.block.time;
 
@@ -295,7 +326,7 @@ fn execute_open_box(
 
     // user cannot open box when time out
     if mystery_box.end_time <= block_time {
-        return Err(ContractError::MysteryBoxTimeOut{})
+        return Err(ContractError::MysteryBoxExpired{})
     }
 
     // generate job id for receiving randomness
@@ -375,7 +406,7 @@ fn execute_receive_hex_randomness(
     let (index, rarity) = mystery_box.rarity_distribution.get_rarity(rarity_check, Uint256::from_u128(MAX_RANGE_RANDOM))?;
     mystery_box.rarity_distribution.update_rarity(index, 1)?;
 
-    let tokens_uri = mystery_box.tokens_uri.clone();
+    let token_uri = mystery_box.token_uri.clone();
 
     // random token url
     let tokens_uri_index = random_number.checked_rem(Uint256::from_u128(tokens_uri.len() as u128))
@@ -391,7 +422,7 @@ fn execute_receive_hex_randomness(
         msg: to_binary(&Cw721RarityExecuteMsg::Mint(MintMsg {
             token_id: token_id.clone(),
             owner: sender.clone().to_string(),
-            token_uri: Some(tokens_uri[uint256_2_usize(tokens_uri_index)?].clone()),
+            token_uri: Some(token_uri[uint256_2_usize(tokens_uri_index)?].clone()),
             extension,
         }))?,
         funds: vec![],
