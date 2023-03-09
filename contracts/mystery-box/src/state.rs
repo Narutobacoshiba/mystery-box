@@ -1,7 +1,7 @@
 use std::{str::FromStr};
 
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Addr, Timestamp, Decimal, Uint128, Uint256, Coin};
+use cosmwasm_std::{Addr, Timestamp, Decimal, Uint256, Coin};
 use cw_storage_plus::{Item, Map};
 
 use crate::ContractError;
@@ -29,12 +29,6 @@ pub struct Rarity {
     pub supply: u32,
 } 
 
-
-impl Rarity {
-    pub fn check_rate(&self) -> bool {
-        return self.rate.to_uint_ceil() <= Uint128::new(100)
-    }
-}
 
 #[cw_serde]
 pub struct RarityDistribution {
@@ -181,15 +175,21 @@ pub struct MysteryBox {
     pub end_time: Timestamp,
     pub rarity_distribution: RarityDistribution,
     pub token_uri: String,
-    pub tokens_id: Vec<u32>,
-    pub total_supply: u32,
+    pub tokens_id: Vec<u64>,
     pub fund: Coin,
     pub create_time: Timestamp,
 }
 
 pub const MYSTERY_BOXS: Map<String, MysteryBox> = Map::new("mystery boxs");
 
-pub const BOXS_OWNER: Map<String, Vec<u32>> = Map::new("boxs owner");
+#[cw_serde]
+pub struct BoxOwner {
+    pub buyer: Addr,
+    pub token_uri: String,
+    pub token_index: usize,
+}
+
+pub const BOXS_OWNER: Map<String, BoxOwner> = Map::new("boxs owner");
 
 pub const WHITE_LIST: Map<Addr, bool> = Map::new("white list");
 
@@ -431,6 +431,11 @@ mod unit_tests {
     }
 
     #[test]
+    fn test_check_rate_with_too_large_bigint() {
+        
+    }
+
+    #[test]
     fn test_update_rarity() {
         let mut vecs: Vec<Rarity> = Vec::new();
         
@@ -503,7 +508,5 @@ mod unit_tests {
         let dist: RarityDistribution = RarityDistribution {
             vecs
         };
-
-
     }
 }

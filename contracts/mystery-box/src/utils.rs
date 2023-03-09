@@ -3,7 +3,7 @@ use cosmwasm_std::{Timestamp, Uint256};
 use chrono::{DateTime, Local};
 use crate::error::ContractError;
 
-// calculate sha256 hash value
+/// calculate sha256 hash value
 pub fn sha256_hash(string: &[u8]) -> Vec<u8> {
     let mut hasher = Sha256::new();
     // write input message
@@ -14,22 +14,22 @@ pub fn sha256_hash(string: &[u8]) -> Vec<u8> {
     return result.to_vec();
 }
 
-// make id string from param1 and param2
+/// make id string from param1 and param2
 pub fn make_id(params: Vec<String>) -> String {
     let seed = params.join("");
     return hex::encode(sha256_hash(seed.as_bytes()));
 }
 
-// convert time with format "D:M:Y s:m:hZ" to Timestamp
+/// convert time with format "D:M:Y s:m:hZ" to Timestamp
 pub fn convert_datetime_string(data: String) -> Result<Timestamp, ContractError> {
     let date_time = data.parse::<DateTime<Local>>()
         .map_err(|_| ContractError::CustomError{val: String::from("Invalid date string format!")})?;
     return Ok(Timestamp::from_nanos(date_time.timestamp_nanos() as u64));
 }
 
-// max usize value 2 ^ 64 - 1
+/// max usize value 2 ^ 64 - 1
 const MAX_USIZE: u128 = 18_446_744_073_709_551_615u128;
-// convert uint256 type to usize type
+/// convert uint256 type to usize type
 pub fn uint256_2_usize(u: Uint256) -> Result<usize, ContractError> {
     if u > Uint256::from_u128(MAX_USIZE) {
         return Err(ContractError::CustomError{val: String::from("to large number")});
