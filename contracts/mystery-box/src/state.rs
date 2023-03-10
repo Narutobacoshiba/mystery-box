@@ -1,5 +1,5 @@
-use std::{str::FromStr};
-
+use std::str::FromStr;
+use std::collections::HashMap;
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Timestamp, Decimal, Uint256, Coin};
 use cw_storage_plus::{Item, Map};
@@ -17,7 +17,8 @@ pub const JOBS: Map<String, Job> = Map::new("jobs");
 pub struct Config {
     pub owner: Addr,
     pub aurand_address: Addr,
-    pub supplier_address: Option<Addr>,
+    pub box_supplier: Option<Addr>,
+    pub gift_supplier: Option<Addr>,
 }
 pub const CONFIG: Item<Config> = Item::new("config");
 
@@ -29,13 +30,11 @@ pub struct Rarity {
     pub supply: u32,
 } 
 
-
 #[cw_serde]
 pub struct RarityDistribution {
     pub vecs: Vec<Rarity>,
 }
-
-
+/// Euler's number
 const E: &str = "2.71828";
 const RATE_MODIFY_EXPONENT: u32 = 6u32;
 const MAX_EXPONENT: u32 = 47u32;
@@ -43,7 +42,8 @@ const MAX_EXPONENT: u32 = 47u32;
 /// Calculate rate modify for a type of rarity using equation:
 ///     
 ///    let rate_modifier = (1 / (1 + e ^-(n / slip_rate))) ^ RATE_MODIFY_EXPONENT 
-/// 
+///
+///  
 /// 
 /// e: Euler's number (~2.71828)
 /// 
@@ -150,7 +150,8 @@ impl RarityDistribution {
             rarity.supply = 0;
         }else {
             let remain_supply = rarity.supply - consumed;
-            rarity.rate = rarity.rate * rate_modifier(remain_supply, rarity.slip_rate)?;
+            rarity.rate = rarity.rate.checked_mul(rate_modifier(remain_supply, rarity.slip_rate)?)
+                .map_err(|_| ContractError::DecimalOperationFail{})?;
             rarity.supply = remain_supply;
         }
 
@@ -176,27 +177,32 @@ pub struct MysteryBox {
     pub rarity_distribution: RarityDistribution,
     pub token_uri: String,
     pub tokens_id: Vec<u64>,
+    pub total_supply: u64,
     pub fund: Coin,
     pub create_time: Timestamp,
 }
 
+impl MysteryBox {
+    pub fn remove_token_id(&mut self, index: usize) {
+        self.tokens_id.remove(index);
+    }
+}
 pub const MYSTERY_BOXS: Map<String, MysteryBox> = Map::new("mystery boxs");
 
 #[cw_serde]
-pub struct BoxOwner {
+pub struct BoxBuyer {
     pub buyer: Addr,
-    pub token_uri: String,
-    pub token_index: usize,
+    pub time: Timestamp,
+    pub is_opened: bool,
 }
 
-pub const BOXS_OWNER: Map<String, BoxOwner> = Map::new("boxs owner");
+pub const BOX_BUYERS: Map<String, (usize, HashMap<String, BoxBuyer>)> = Map::new("box buyers");
 
 pub const WHITE_LIST: Map<Addr, bool> = Map::new("white list");
 
 #[cfg(test)]
 mod unit_tests {
     use super::*;
-
 
     #[test]
     fn test_sort_rarity() {
@@ -374,6 +380,38 @@ mod unit_tests {
     }
 
     #[test]
+    fn test_total_supply_success_with_big_supply() {
+        let mut vecs: Vec<Rarity> = Vec::new();
+        
+        vecs.push(Rarity{
+            name: "limited".to_string(),
+            rate: Decimal::from_str("0.09").unwrap(),
+            supply: u32::MAX,
+            slip_rate: 1,
+        });
+        
+        vecs.push(Rarity{
+            name: "common".to_string(),
+            rate: Decimal::from_str("0.90").unwrap(),
+            supply: u32::MAX,
+            slip_rate: 0,
+        });
+
+        vecs.push(Rarity{
+            name: "rare".to_string(),
+            rate: Decimal::from_str("0.01").unwrap(),
+            supply: u32::MAX,
+            slip_rate: 1,
+        });
+
+        let dist: RarityDistribution = RarityDistribution {
+            vecs
+        };
+
+        assert_eq!(dist.total_supply(), 12_884_901_885);
+    }
+
+    #[test]
     fn test_get_rarity() {
         let mut vecs: Vec<Rarity> = Vec::new();
         
@@ -431,11 +469,6 @@ mod unit_tests {
     }
 
     #[test]
-    fn test_check_rate_with_too_large_bigint() {
-        
-    }
-
-    #[test]
     fn test_update_rarity() {
         let mut vecs: Vec<Rarity> = Vec::new();
         
@@ -478,35 +511,5 @@ mod unit_tests {
 
         assert_eq!(dist.vecs[0].supply, 0);
         assert!(dist.vecs[0].rate == Decimal::zero());
-    }
-
-    #[test]
-    fn test_check_rate_with_invalid_bigint() {
-        let mut vecs: Vec<Rarity> = Vec::new();
-        
-        vecs.push(Rarity{
-            name: "limited".to_string(),
-            rate: Decimal::from_str("0.09").unwrap(),
-            supply: 990u32,
-            slip_rate: 1,
-        });
-        
-        vecs.push(Rarity{
-            name: "common".to_string(),
-            rate: Decimal::from_str("0.90").unwrap(),
-            supply: 9000u32,
-            slip_rate: 0,
-        });
-
-        vecs.push(Rarity{
-            name: "rare".to_string(),
-            rate: Decimal::from_str("0.01").unwrap(),
-            supply: 10u32,
-            slip_rate: 1,
-        });
-
-        let dist: RarityDistribution = RarityDistribution {
-            vecs
-        };
     }
 }

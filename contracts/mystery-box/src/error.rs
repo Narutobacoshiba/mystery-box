@@ -25,10 +25,16 @@ pub enum ContractError {
     Uint256OperatorError{},
     
     #[error("SupplierAlreadyLinked")]
-    SupplierAlreadyLinked{},
+    BoxSupplierAlreadyLinked{},
 
-    #[error("SupplierNotLinked")]
-    SupplierNotLinked{},
+    #[error("BoxSupplierNotLinked")]
+    BoxSupplierNotLinked{},
+
+    #[error("GiftSupplierAlreadyLinked")]
+    GiftSupplierAlreadyLinked{},
+
+    #[error("GiftSupplierNotLinked")]
+    GiftSupplierNotLinked{},
 
     #[error("InvalidTokenReplyId")]
     InvalidTokenReplyId{},

@@ -1,5 +1,5 @@
 use sha2::{Sha256,Digest};
-use cosmwasm_std::{Timestamp, Uint256};
+use cosmwasm_std::Timestamp;
 use chrono::{DateTime, Local};
 use crate::error::ContractError;
 
@@ -27,7 +27,7 @@ pub fn convert_datetime_string(data: String) -> Result<Timestamp, ContractError>
     return Ok(Timestamp::from_nanos(date_time.timestamp_nanos() as u64));
 }
 
-/// max usize value 2 ^ 64 - 1
+/* /// max usize value 2 ^ 64 - 1
 const MAX_USIZE: u128 = 18_446_744_073_709_551_615u128;
 /// convert uint256 type to usize type
 pub fn uint256_2_usize(u: Uint256) -> Result<usize, ContractError> {
@@ -38,7 +38,7 @@ pub fn uint256_2_usize(u: Uint256) -> Result<usize, ContractError> {
     let bytes = u.to_le_bytes();
     return Ok(usize::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3], 
                 bytes[4], bytes[5], bytes[6], bytes[7]]));
-}
+} */
 
 #[cfg(test)]
 mod unit_tests {
@@ -74,7 +74,7 @@ mod unit_tests {
         assert_eq!(make_id(params), String::from("ff692cfd3061d86038f245597ae55a8161f9840488feab19a9ccd0da6a86c019"));
     }
 
-    #[test]
+    /* #[test]
     fn uint256_2_usize_success() {
         let big_int = Uint256::from_u128(18_446_744_073_709_551_615u128);
 
@@ -91,5 +91,5 @@ mod unit_tests {
             ContractError::CustomError{val: v} => assert_eq!(v, String::from("to large number")),
             _ => {}
         }
-    }
+    } */
 }

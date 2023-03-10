@@ -10,16 +10,23 @@ pub struct InstantiateMsg {
     /// onwer of this contract
     pub owner: String,
 
-    /// code id of a cw-721 base contract
-    pub box_supplier: String,
+    /// cw-721 contract for box
+    pub box_supplier_code_id: u64,
 
-    pub nft_supplier: String,
+    /// name of box NFT contract
+    pub box_name: String,
 
-    /// name of cw721 contract
-    pub name: String,
+    /// symbol of box NFT contract
+    pub box_symbol: String,
 
-    /// symbol of c2721 contract
-    pub symbol: String,
+    /// cw-721 contract for gift
+    pub gift_supplier_code_id: u64,
+
+    /// name of box NFT contract
+    pub gift_name: String,
+
+    /// symbol of box NFT contract
+    pub gift_symbol: String,
 }
 
 /// Message type for `execute` entry_point
@@ -28,7 +35,6 @@ pub enum ExecuteMsg {
     /// unbox mystery box
     OpenBox {
         box_id: String,
-        contract_address: String,
         token_id: String,
     },
 
@@ -44,7 +50,6 @@ pub enum ExecuteMsg {
         end_time: String,
         rarity_distribution: RarityDistribution,
         token_uri: String,
-        total_supply: u32,
         fund: Coin,
     },
 
