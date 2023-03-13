@@ -1,7 +1,7 @@
 [workspace]
 
 members = [
-  'contracts/mystery-box', 'contracts/cw721-rarity', 'contracts/test'
+  'contracts/mystery-box', 'contracts/cw721-rarity'
 ]
 
 [profile.release]

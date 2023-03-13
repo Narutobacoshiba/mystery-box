@@ -144,7 +144,7 @@ impl RarityDistribution {
 
     pub fn update_rarity(&mut self, index: usize, consumed: u32) -> Result< () ,ContractError>{
         let mut rarity = &mut self.vecs[index];
-
+    
         if consumed >= rarity.supply {
             rarity.rate = Decimal::zero();
             rarity.supply = 0;
@@ -154,17 +154,17 @@ impl RarityDistribution {
                 .map_err(|_| ContractError::DecimalOperationFail{})?;
             rarity.supply = remain_supply;
         }
-
+    
         Ok(())
     }
 
     pub fn total_supply(&self) -> u64 {
-
+    
         let mut total_supply = 0u64;
         for r in self.vecs.iter() {
             total_supply += r.supply as u64;
         }
-
+    
         return total_supply;
     }
 }
@@ -175,11 +175,12 @@ pub struct MysteryBox {
     pub start_time: Timestamp,
     pub end_time: Timestamp,
     pub rarity_distribution: RarityDistribution,
-    pub token_uri: String,
+    pub token_uri: Option<String>,
     pub tokens_id: Vec<u64>,
     pub total_supply: u64,
     pub fund: Coin,
     pub create_time: Timestamp,
+    pub owner: Addr,
 }
 
 impl MysteryBox {

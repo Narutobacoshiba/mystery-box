@@ -5,7 +5,7 @@ use cosmwasm_std::entry_point;
 use cosmwasm_std::{
     to_binary, Binary, Deps, DepsMut, Env, Addr, Api, SubMsg, QueryRequest,
     MessageInfo, Response, StdResult, WasmMsg, Uint256, ReplyOn, WasmQuery,
-    Reply, Timestamp, Uint128, Coin,
+    Reply, Timestamp, Uint128, Coin, BankMsg
 };
 use cw2::set_contract_version;
 use cw721::{Cw721QueryMsg, Expiration as Cw721Expiration};
@@ -122,19 +122,28 @@ pub fn execute(
             token_id,
         } => execute_open_box(deps,env,info,box_id, token_id),
 
-        ExecuteMsg::BuyBox { 
+        ExecuteMsg::MintBox { 
             box_id 
-        }   => execute_buy_box(deps,env,info,box_id),
+        }   => execute_mint_box(deps,env,info,box_id),
+
+        ExecuteMsg::BurnBox { 
+            box_id, 
+            token_id 
+        } => execute_burn_box(deps,env,info,box_id,token_id),
 
         ExecuteMsg::CreateMysteryBox { 
             name, 
             start_time, 
             end_time, 
             rarity_distribution, 
-            token_uri,
             fund,
         } => execute_create_mystery_box(deps,env,info,name,start_time,end_time,
-                    rarity_distribution,token_uri,fund),
+                    rarity_distribution,fund),
+        
+        ExecuteMsg::UpdateMysteryBox {
+            box_id,
+            token_uri
+        } => execute_update_mystery_box(deps,env,info,box_id,token_uri),
 
         ExecuteMsg::RemoveMysteryBox {
             box_id,
@@ -147,7 +156,7 @@ pub fn execute(
         ExecuteMsg::ReceiveHexRandomness {
             request_id,
             randomness,
-        } => execute_receive_hex_randomness(deps, info, request_id, randomness),
+        } => execute_receive_hex_randomness(deps,info,request_id,randomness),
     }
 }
 
@@ -157,7 +166,7 @@ pub fn reply(deps: DepsMut, _env: Env, msg: Reply) -> Result<Response, ContractE
     let mut config: Config = CONFIG.load(deps.storage)?;
 
     let reply = parse_reply_instantiate_data(msg.clone()).unwrap();
-    
+
     match msg.id {
         INSTANTIATE_BOX_NFT_REPLY_ID => {
             if config.box_supplier.is_some() {
@@ -176,6 +185,7 @@ pub fn reply(deps: DepsMut, _env: Env, msg: Reply) -> Result<Response, ContractE
             config.gift_supplier = Some(optional_addr_validate(deps.api, reply.contract_address)?);
             CONFIG.save(deps.storage, &config)?;
         },
+
         _ => {}
     }
 
@@ -188,6 +198,40 @@ fn optional_addr_validate(api: &dyn Api, addr: String) -> Result<Addr, ContractE
     Ok(addr)
 }
 
+fn execute_update_mystery_box(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    box_id: String,
+    token_uri: String,
+) -> Result<Response, ContractError> {
+
+    if !MYSTERY_BOXS.has(deps.storage, box_id.clone()) {
+        return Err(ContractError::BoxWithIdNotExist{}); 
+    }
+
+    let mut mystery_box = MYSTERY_BOXS.load(deps.storage, box_id.clone())?;
+
+    if mystery_box.owner != info.sender.clone() {
+        return Err(ContractError::Unauthorized{});
+    }
+
+    if mystery_box.token_uri.is_some() {
+        return Err(ContractError::CustomError{val: String::from("Token uri already set")});
+    }
+
+    let block_time = env.block.time;
+    if mystery_box.start_time <= block_time {
+        return Err(ContractError::CustomError{val: String::from("Mystery box cannot update now")});
+    }
+
+    mystery_box.token_uri = Some(token_uri);
+
+    MYSTERY_BOXS.save(deps.storage, box_id.clone(), &mystery_box)?;
+
+    Ok(Response::new().add_attribute("action", "update_mystery_box"))
+}
+
 fn execute_create_mystery_box(
     deps: DepsMut,
     env: Env,
@@ -196,7 +240,6 @@ fn execute_create_mystery_box(
     start_time: String,
     end_time: String,
     rarity_distribution: RarityDistribution,
-    token_uri: String,
     fund: Coin,
 ) -> Result<Response, ContractError> {
 
@@ -232,12 +275,13 @@ fn execute_create_mystery_box(
         name, 
         start_time, 
         end_time, 
-        rarity_distribution, 
-        token_uri, 
+        rarity_distribution,  
         tokens_id,
         fund,
         total_supply,
+        token_uri: None,
         create_time: block_time, 
+        owner: info.sender,
     })?;
 
     let init_box_buyers: HashMap<String, BoxBuyer> = HashMap::new();
@@ -302,7 +346,55 @@ fn execute_set_white_list(
             .add_attribute("owner", config.owner))
 }
 
-fn execute_buy_box(
+fn execute_burn_box(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    box_id: String,
+    token_id: String,
+) -> Result<Response, ContractError> {
+
+    if !MYSTERY_BOXS.has(deps.storage, box_id.clone()){
+        return Err(ContractError::BoxWithIdNotExist{});
+    }
+
+    let mystery_box = MYSTERY_BOXS.load(deps.storage, box_id.clone())?;
+    let (count, mut box_buyers) = BOX_BUYERS.load(deps.storage, box_id.clone())?;
+
+    // check if user already buy this box
+    if !box_buyers.contains_key(&token_id) {
+        return Err(ContractError::CustomError{val: String::from("Token not recognized!")});
+    }
+    let buyer = &box_buyers[&token_id];
+
+    if buyer.buyer != info.sender {
+        return Err(ContractError::Unauthorized{});
+    }
+    
+    let block_time = env.block.time;
+    if !(mystery_box.token_uri.is_none() && mystery_box.start_time <= block_time) {
+        return Err(ContractError::CustomError {
+            val: String::from("Can only burn box when token uri not set 
+                            before start time of mystery box!")});
+    }
+ 
+    let msg = BankMsg::Send {
+        to_address: buyer.buyer.to_string(),
+        amount: vec![mystery_box.fund],
+    };
+
+    // Remove token IDs from purchase history
+    box_buyers.remove(&token_id);
+    BOX_BUYERS.save(deps.storage, box_id.clone(),&(
+        count, 
+        box_buyers
+    ))?;
+
+    Ok(Response::new().add_message(msg)
+        .add_attribute("action", "burn_box"))
+}
+
+fn execute_mint_box(
     deps: DepsMut,
     env: Env,
     info: MessageInfo,
@@ -323,7 +415,6 @@ fn execute_buy_box(
 
     let mystery_box = MYSTERY_BOXS.load(deps.storage, box_id.clone())?;
     let (count, mut box_buyers) = BOX_BUYERS.load(deps.storage, box_id.clone())?;
-
 
     // check denom and get amount
     let denom = mystery_box.fund.denom;
@@ -413,7 +504,11 @@ fn execute_open_box(
     }
 
     if buyer.is_opened {
-        return  Err(ContractError::CustomError {val: String::from("Box has opened!")});
+        return  Err(ContractError::CustomError{val: String::from("Box has opened!")});
+    }
+
+    if mystery_box.token_uri.is_some() {
+        return Err(ContractError::CustomError{val: String::from("Token uri not set")});
     }
 
     let block_time = env.block.time;
@@ -519,6 +614,13 @@ fn execute_open_box(
         .add_attribute("token_id", token_id))
 }
 
+fn get_token_uri(uri_prefix: String, token_id: String) -> String {
+    // TODO: maybe we need the suffix of the token_uri, too
+    // the token_uri is the uri_prefix + token_id
+    let token_uri = format!("{}{}", uri_prefix, token_id);
+    token_uri
+}
+
 fn execute_receive_hex_randomness(
     deps: DepsMut,
     info: MessageInfo,
@@ -571,9 +673,9 @@ fn execute_receive_hex_randomness(
     let token_uri_index = tokens_id[tokens_id_index];
     mystery_box.remove_token_id(tokens_id_index);
 
-    let token_uri = &mystery_box.token_uri;
+    let token_uri = &mystery_box.token_uri.clone().unwrap();
     // token uri made by combining token_uri
-    let unique_token_uri = token_uri.to_owned() + &token_uri_index.to_string();
+    let unique_token_uri = get_token_uri(token_uri.to_owned(), token_uri_index.to_string());
 
     // token id made by combining box id and token id 
     let unique_token_id = make_id(vec![box_id.clone(), token_uri_index.to_string()]);
@@ -601,8 +703,7 @@ fn execute_receive_hex_randomness(
                 .add_attribute("action", "receive_hex_randomness")
                 .add_attribute("token_id", unique_token_id)
                 .add_attribute("token_uri", unique_token_uri)
-                .add_attribute("minter", sender)
-                )
+                .add_attribute("minter", sender))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]

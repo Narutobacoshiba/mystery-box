@@ -39,8 +39,14 @@ pub enum ExecuteMsg {
     },
 
     /// buy a mystery box
-    BuyBox {
+    MintBox {
         box_id: String,
+    },
+
+    /// burn a mystery box and get refund if success
+    BurnBox {
+        box_id: String,
+        token_id: String,
     },
 
     /// generate a mystery box
@@ -49,8 +55,12 @@ pub enum ExecuteMsg {
         start_time: String,
         end_time: String,
         rarity_distribution: RarityDistribution,
-        token_uri: String,
         fund: Coin,
+    },
+
+    UpdateMysteryBox {
+        box_id: String,
+        token_uri: String,
     },
 
     RemoveMysteryBox {
