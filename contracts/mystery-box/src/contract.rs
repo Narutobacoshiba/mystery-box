@@ -29,7 +29,7 @@ use crate::msg::{
 use crate::state::{
     CONFIG, Config,
     JOBS,Job, RarityDistribution,
-    MYSTERY_BOXS, MysteryBox, WHITE_LIST, BoxBuyer, BOX_BUYERS,
+    MYSTERY_BOXS, MysteryBox, WHITE_LIST, BoxPurchase, BOX_PURCHASES,
 };
 use crate::utils::{
     make_id,
@@ -192,7 +192,6 @@ pub fn reply(deps: DepsMut, _env: Env, msg: Reply) -> Result<Response, ContractE
     Ok(Response::new())
 }
 
-
 fn optional_addr_validate(api: &dyn Api, addr: String) -> Result<Addr, ContractError> {
     let addr = api.addr_validate(&addr).map_err(|_| ContractError::InvalidAddress{})?;
     Ok(addr)
@@ -203,7 +202,7 @@ fn execute_update_mystery_box(
     env: Env,
     info: MessageInfo,
     box_id: String,
-    token_uri: String,
+    token_uri: String,      
 ) -> Result<Response, ContractError> {
 
     if !MYSTERY_BOXS.has(deps.storage, box_id.clone()) {
@@ -271,7 +270,7 @@ fn execute_create_mystery_box(
     // list of nft id
     let tokens_id = (0u64..=total_supply).collect::<Vec<_>>();
 
-    MYSTERY_BOXS.save(deps.storage, box_id.clone(), &MysteryBox { 
+    MYSTERY_BOXS.save(deps.storage, box_id.clone(), &MysteryBox {
         name, 
         start_time, 
         end_time, 
@@ -284,8 +283,8 @@ fn execute_create_mystery_box(
         owner: info.sender,
     })?;
 
-    let init_box_buyers: HashMap<String, BoxBuyer> = HashMap::new();
-    BOX_BUYERS.save(deps.storage, box_id.clone(), &(0usize, init_box_buyers))?;
+    let init_box_purchases: HashMap<String, BoxPurchase> = HashMap::new();
+    BOX_PURCHASES.save(deps.storage, box_id.clone(), &(0usize, init_box_purchases))?;
 
     Ok(Response::new().add_attribute("action", "create_mystery_box")
                 .add_attribute("box_id", box_id)
@@ -359,13 +358,13 @@ fn execute_burn_box(
     }
 
     let mystery_box = MYSTERY_BOXS.load(deps.storage, box_id.clone())?;
-    let (count, mut box_buyers) = BOX_BUYERS.load(deps.storage, box_id.clone())?;
+    let (count, mut box_purchases) = BOX_PURCHASES.load(deps.storage, box_id.clone())?;
 
     // check if user already buy this box
-    if !box_buyers.contains_key(&token_id) {
+    if !box_purchases.contains_key(&token_id) {
         return Err(ContractError::CustomError{val: String::from("Token not recognized!")});
-    }
-    let buyer = &box_buyers[&token_id];
+    } 
+    let buyer = &box_purchases[&token_id];
 
     if buyer.buyer != info.sender {
         return Err(ContractError::Unauthorized{});
@@ -374,20 +373,20 @@ fn execute_burn_box(
     let block_time = env.block.time;
     if !(mystery_box.token_uri.is_none() && mystery_box.start_time <= block_time) {
         return Err(ContractError::CustomError {
-            val: String::from("Can only burn box when token uri not set 
+            val: String::from("Only can burn when token uri not set 
                             before start time of mystery box!")});
     }
- 
+
     let msg = BankMsg::Send {
         to_address: buyer.buyer.to_string(),
         amount: vec![mystery_box.fund],
     };
 
     // Remove token IDs from purchase history
-    box_buyers.remove(&token_id);
-    BOX_BUYERS.save(deps.storage, box_id.clone(),&(
+    box_purchases.remove(&token_id);
+    BOX_PURCHASES.save(deps.storage, box_id.clone(),&(
         count, 
-        box_buyers
+        box_purchases
     ))?;
 
     Ok(Response::new().add_message(msg)
@@ -414,7 +413,7 @@ fn execute_mint_box(
     }
 
     let mystery_box = MYSTERY_BOXS.load(deps.storage, box_id.clone())?;
-    let (count, mut box_buyers) = BOX_BUYERS.load(deps.storage, box_id.clone())?;
+    let (count, mut box_purchases) = BOX_PURCHASES.load(deps.storage, box_id.clone())?;
 
     // check denom and get amount
     let denom = mystery_box.fund.denom;
@@ -454,14 +453,14 @@ fn execute_mint_box(
         funds: vec![],
     };
 
-    box_buyers.insert(token_id.clone(), BoxBuyer { 
+    box_purchases.insert(token_id.clone(), BoxPurchase { 
         buyer: info.sender.clone(), 
         time: env.block.time,
         is_opened: false
     });
-    BOX_BUYERS.save(deps.storage, box_id.clone(),&(
+    BOX_PURCHASES.save(deps.storage, box_id.clone(),&(
         count + 1, 
-        box_buyers
+        box_purchases
     ))?;
 
     Ok(Response::new().add_message(mint_msg)
@@ -491,13 +490,13 @@ fn execute_open_box(
     }
 
     let mystery_box = MYSTERY_BOXS.load(deps.storage, box_id.clone())?;
-    let (count, mut box_buyers) = BOX_BUYERS.load(deps.storage, box_id.clone())?;
+    let (count, mut box_purchases) = BOX_PURCHASES.load(deps.storage, box_id.clone())?;
 
     // check if user already buy this box
-    if !box_buyers.contains_key(&box_id) {
+    if !box_purchases.contains_key(&box_id) {
         return Err(ContractError::CustomError{val: String::from("Token not recognized!")});
     }
-    let buyer = &box_buyers[&box_id];
+    let buyer = &box_purchases[&box_id];
 
     if buyer.buyer != info.sender.to_string() {
         return Err(ContractError::Unauthorized{});
@@ -599,10 +598,10 @@ fn execute_open_box(
     })?;
 
     // Remove token IDs from purchase history
-    box_buyers.remove(&token_id);
-    BOX_BUYERS.save(deps.storage, box_id.clone(),&(
+    box_purchases.remove(&token_id);
+    BOX_PURCHASES.save(deps.storage, box_id.clone(),&(
         count, 
-        box_buyers
+        box_purchases
     ))?;
 
     Ok(Response::new()

@@ -131,18 +131,23 @@ impl RarityDistribution {
             current_max_bound = min_bound;
         }
 
-        if let Some(com) = self.vecs.last().cloned() {
+
+        let mut count = self.vecs.len();
+        let mut rev_iter = self.vecs.iter().rev();
+        while let Some(com) = rev_iter.next() {
+
+            count -= 1;
+
             if com.supply > 0 {
-                Ok((self.vecs.len() - 1, com))
-            }else {
-                Err(ContractError::PriceInsufficient{})
+                return Ok((count, com.to_owned()));
             }
-        }else {
-            Err(ContractError::ZeroRarity{})
         }
+
+        Err(ContractError::PriceInsufficient{})
     }
 
-    pub fn update_rarity(&mut self, index: usize, consumed: u32) -> Result< () ,ContractError>{
+
+    pub fn update_rarity(&mut self, index: usize, consumed: u32) -> Result<(),ContractError>{
         let mut rarity = &mut self.vecs[index];
     
         if consumed >= rarity.supply {
@@ -157,6 +162,7 @@ impl RarityDistribution {
     
         Ok(())
     }
+
 
     pub fn total_supply(&self) -> u64 {
     
@@ -191,19 +197,29 @@ impl MysteryBox {
 pub const MYSTERY_BOXS: Map<String, MysteryBox> = Map::new("mystery boxs");
 
 #[cw_serde]
-pub struct BoxBuyer {
+pub struct BoxPurchase {
     pub buyer: Addr,
     pub time: Timestamp,
     pub is_opened: bool,
 }
 
-pub const BOX_BUYERS: Map<String, (usize, HashMap<String, BoxBuyer>)> = Map::new("box buyers");
+pub const BOX_PURCHASES: Map<String, (usize, HashMap<String, BoxPurchase>)> = Map::new("box purchase");
 
 pub const WHITE_LIST: Map<Addr, bool> = Map::new("white list");
 
 #[cfg(test)]
 mod unit_tests {
     use super::*;
+
+    #[test]
+    fn test() {
+        let mut a = vec![1,2,3,4,5];
+        let b: &mut Vec<i32> = a.as_mut();
+
+        b[3] = 6;
+
+        print!("{:?}",a);
+    }
 
     #[test]
     fn test_sort_rarity() {
