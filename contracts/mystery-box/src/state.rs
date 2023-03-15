@@ -34,9 +34,9 @@ pub struct Rarity {
 pub struct RarityDistribution {
     pub vecs: Vec<Rarity>,
 }
-/// Euler's number
-const E: &str = "2.71828";
-const RATE_MODIFY_EXPONENT: u32 = 6u32;
+/// random number (recommend 1.5 - 3.0)
+const E: &str = "1.5";
+const RATE_MODIFY_EXPONENT: u32 = 3u32;
 const MAX_EXPONENT: u32 = 47u32;
 
 /// Calculate rate modify for a type of rarity using equation:
@@ -45,7 +45,7 @@ const MAX_EXPONENT: u32 = 47u32;
 ///
 ///  
 /// 
-/// e: Euler's number (~2.71828)
+/// e: random number (1.5)
 /// 
 /// n: number of rarity's supply
 /// 
