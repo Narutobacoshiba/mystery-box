@@ -136,9 +136,10 @@ pub fn execute(
             start_time, 
             end_time, 
             rarity_distribution, 
+            max_supply,
             fund,
         } => execute_create_mystery_box(deps,env,info,name,start_time,end_time,
-                    rarity_distribution,fund),
+                    rarity_distribution,max_supply,fund),
         
         ExecuteMsg::UpdateMysteryBox {
             box_id,
@@ -197,6 +198,72 @@ fn optional_addr_validate(api: &dyn Api, addr: String) -> Result<Addr, ContractE
     Ok(addr)
 }
 
+fn execute_create_mystery_box(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    name: String,
+    start_time: String,
+    end_time: String,
+    rarity_distribution: RarityDistribution,
+    max_supply: Option<u64>,
+    fund: Coin,
+) -> Result<Response, ContractError> {
+
+    let config = CONFIG.load(deps.storage)?;
+
+    if config.owner != info.sender {
+        return Err(ContractError::Unauthorized{});
+    }
+
+    let start_time: Timestamp = convert_datetime_string(start_time)?;
+    let end_time: Timestamp = convert_datetime_string(end_time)?;
+
+    let block_time: Timestamp = env.block.time;
+
+    if end_time <= block_time {
+        return Err(ContractError::InvalidEndTime{});
+    } 
+
+    if !rarity_distribution.check_rate()? {
+        return Err(ContractError::InvalidRarityRate{});
+    }
+
+    let box_id = make_id(vec![
+        info.sender.to_string(), 
+        env.block.time.to_string(),
+    ]);
+    
+    let max_supply = if max_supply.is_none() {
+        rarity_distribution.total_supply()
+    } else{
+        max_supply.unwrap()
+    };
+    // list of nft id
+    let tokens_id = (0u64..=max_supply).collect::<Vec<_>>();
+
+    MYSTERY_BOXS.save(deps.storage, box_id.clone(), &MysteryBox {
+        name, 
+        start_time, 
+        end_time, 
+        rarity_distribution,  
+        tokens_id,
+        fund,
+        max_supply,
+        token_uri: None,
+        create_time: block_time, 
+        owner: info.sender,
+    })?;
+
+    let init_box_purchases: HashMap<String, BoxPurchase> = HashMap::new();
+    BOX_PURCHASES.save(deps.storage, box_id.clone(), &(0usize, init_box_purchases))?;
+
+    Ok(Response::new().add_attribute("action", "create_mystery_box")
+                .add_attribute("box_id", box_id)
+                .add_attribute("create_time", block_time.to_string()))
+}
+
+
 fn execute_update_mystery_box(
     deps: DepsMut,
     env: Env,
@@ -231,65 +298,6 @@ fn execute_update_mystery_box(
     Ok(Response::new().add_attribute("action", "update_mystery_box"))
 }
 
-fn execute_create_mystery_box(
-    deps: DepsMut,
-    env: Env,
-    info: MessageInfo,
-    name: String,
-    start_time: String,
-    end_time: String,
-    rarity_distribution: RarityDistribution,
-    fund: Coin,
-) -> Result<Response, ContractError> {
-
-    let config = CONFIG.load(deps.storage)?;
-
-    if config.owner != info.sender {
-        return Err(ContractError::Unauthorized{});
-    }
-
-    let start_time: Timestamp = convert_datetime_string(start_time)?;
-    let end_time: Timestamp = convert_datetime_string(end_time)?;
-
-    let block_time: Timestamp = env.block.time;
-
-    if end_time <= block_time {
-        return Err(ContractError::InvalidEndTime{});
-    } 
-
-    if !rarity_distribution.check_rate()? {
-        return Err(ContractError::InvalidRarityRate{});
-    }
-
-    let box_id = make_id(vec![
-        info.sender.to_string(), 
-        env.block.time.to_string(),
-    ]);
-    
-    let total_supply = rarity_distribution.total_supply();
-    // list of nft id
-    let tokens_id = (0u64..=total_supply).collect::<Vec<_>>();
-
-    MYSTERY_BOXS.save(deps.storage, box_id.clone(), &MysteryBox {
-        name, 
-        start_time, 
-        end_time, 
-        rarity_distribution,  
-        tokens_id,
-        fund,
-        total_supply,
-        token_uri: None,
-        create_time: block_time, 
-        owner: info.sender,
-    })?;
-
-    let init_box_purchases: HashMap<String, BoxPurchase> = HashMap::new();
-    BOX_PURCHASES.save(deps.storage, box_id.clone(), &(0usize, init_box_purchases))?;
-
-    Ok(Response::new().add_attribute("action", "create_mystery_box")
-                .add_attribute("box_id", box_id)
-                .add_attribute("create_time", block_time.to_string()))
-}
 
 fn execute_remove_mystery_box (
     deps: DepsMut,
@@ -412,11 +420,16 @@ fn execute_mint_box(
         return Err(ContractError::BoxWithIdNotExist{});
     }
 
-    let mystery_box = MYSTERY_BOXS.load(deps.storage, box_id.clone())?;
+    let mut mystery_box = MYSTERY_BOXS.load(deps.storage, box_id.clone())?;
     let (count, mut box_purchases) = BOX_PURCHASES.load(deps.storage, box_id.clone())?;
 
+    // check if mystery_box soldout
+    if mystery_box.max_supply == 0 {
+        return Err(ContractError::SoldOut{});
+    }
+
     // check denom and get amount
-    let denom = mystery_box.fund.denom;
+    let denom = mystery_box.fund.denom.clone();
     let matching_coin = info.funds.iter().find(|fund| fund.denom.eq(&denom));
     let sent_amount: Uint128 = match matching_coin {
         Some(coin) => coin.amount,
@@ -452,6 +465,9 @@ fn execute_mint_box(
         }))?,
         funds: vec![],
     };
+
+    mystery_box.max_supply -= 1;
+    MYSTERY_BOXS.save(deps.storage, box_id.clone(), &mystery_box)?;
 
     box_purchases.insert(token_id.clone(), BoxPurchase { 
         buyer: info.sender.clone(), 

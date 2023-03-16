@@ -57,6 +57,9 @@ pub enum ContractError {
     #[error("BoxWithIdNotExist")]
     BoxWithIdNotExist{},
 
+    #[error("SoldOut")]
+    SoldOut{},
+    
     #[error("MysteryBoxExpired")]
     MysteryBoxExpired{},
 

@@ -55,6 +55,7 @@ pub enum ExecuteMsg {
         start_time: String,
         end_time: String,
         rarity_distribution: RarityDistribution,
+        max_supply: Option<u64>,
         fund: Coin,
     },
 

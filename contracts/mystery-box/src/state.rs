@@ -132,7 +132,7 @@ impl RarityDistribution {
         }
 
 
-        let mut count = self.vecs.len();
+        /* let mut count = self.vecs.len();
         let mut rev_iter = self.vecs.iter().rev();
         while let Some(com) = rev_iter.next() {
 
@@ -141,6 +141,12 @@ impl RarityDistribution {
             if com.supply > 0 {
                 return Ok((count, com.to_owned()));
             }
+        }
+
+        Err(ContractError::PriceInsufficient{}) */
+
+        if let Some(rarity) = self.vecs.last() {
+            return Ok((self.vecs.len() - 1, rarity.to_owned()));
         }
 
         Err(ContractError::PriceInsufficient{})
@@ -183,7 +189,7 @@ pub struct MysteryBox {
     pub rarity_distribution: RarityDistribution,
     pub token_uri: Option<String>,
     pub tokens_id: Vec<u64>,
-    pub total_supply: u64,
+    pub max_supply: u64,
     pub fund: Coin,
     pub create_time: Timestamp,
     pub owner: Addr,
@@ -191,7 +197,7 @@ pub struct MysteryBox {
 
 impl MysteryBox {
     pub fn remove_token_id(&mut self, index: usize) {
-        self.tokens_id.remove(index);
+        self.tokens_id.swap_remove(index);
     }
 }
 pub const MYSTERY_BOXS: Map<String, MysteryBox> = Map::new("mystery boxs");
@@ -204,6 +210,8 @@ pub struct BoxPurchase {
 }
 
 pub const BOX_PURCHASES: Map<String, (usize, HashMap<String, BoxPurchase>)> = Map::new("box purchase");
+
+pub const BOX_TIME_BUYERS: Map<String, Vec<BoxPurchase>> = Map::new("box time buyers");
 
 pub const WHITE_LIST: Map<Addr, bool> = Map::new("white list");
 
