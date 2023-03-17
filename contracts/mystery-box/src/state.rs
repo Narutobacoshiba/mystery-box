@@ -211,8 +211,6 @@ pub struct BoxPurchase {
 
 pub const BOX_PURCHASES: Map<String, (usize, HashMap<String, BoxPurchase>)> = Map::new("box purchase");
 
-pub const BOX_TIME_BUYERS: Map<String, Vec<BoxPurchase>> = Map::new("box time buyers");
-
 pub const WHITE_LIST: Map<Addr, bool> = Map::new("white list");
 
 #[cfg(test)]
