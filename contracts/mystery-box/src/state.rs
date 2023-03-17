@@ -36,8 +36,9 @@ pub struct RarityDistribution {
 }
 /// random number (recommend 1.5 - 3.0)
 const E: &str = "1.5";
-const RATE_MODIFY_EXPONENT: u32 = 3u32;
-const MAX_EXPONENT: u32 = 47u32;
+const RATE_MODIFY_EXPONENT: u32 = 2u32;
+// E ^ (MAX_EXPONENT + 1) case multiplication overflow
+const MAX_EXPONENT: u32 = 116u32;
 
 /// Calculate rate modify for a type of rarity using equation:
 ///     
@@ -219,12 +220,10 @@ mod unit_tests {
 
     #[test]
     fn test() {
-        let mut a = vec![1,2,3,4,5];
-        let b: &mut Vec<i32> = a.as_mut();
+        let a = Decimal::from_str(E).unwrap();
+        let b = a.pow(116u32);
 
-        b[3] = 6;
-
-        print!("{:?}",a);
+        print!("{:?}",b);
     }
 
     #[test]
@@ -523,7 +522,7 @@ mod unit_tests {
         dist.update_rarity(0, 100).unwrap();
 
         assert_eq!(dist.vecs[0].supply, 890);
-        assert!(dist.vecs[0].rate == Decimal::from_str("0.09").unwrap());
+        assert_eq!(dist.vecs[0].rate, Decimal::from_str("0.09").unwrap());
 
         dist.update_rarity(0, 885).unwrap();
 
