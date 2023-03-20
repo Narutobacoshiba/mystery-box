@@ -1,5 +1,6 @@
 use cosmwasm_schema::{cw_serde,QueryResponses};
 use cosmwasm_std::{Coin,Decimal};
+use crate::state::{RateDistribution,PurchasedBox};
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -39,10 +40,10 @@ pub enum ExecuteMsg {
     /// buy a mystery box
     MintBox {},
 
-    /// burn a mystery box and get refund if success
+    /*/// burn a mystery box and get refund if success
     BurnBox {
         token_id: String,
-    },
+    }, */
 
     /// generate a mystery box
     CreateMysteryBox {
@@ -51,6 +52,7 @@ pub enum ExecuteMsg {
         default_type: Option<String>
     },
 
+    /// update prefix uri for mystery box
     UpdateMysteryBox {
         prefix_uri: String,
     },
@@ -59,6 +61,12 @@ pub enum ExecuteMsg {
     ReceiveHexRandomness {
         request_id: String,
         randomness: Vec<i32>
+    },
+
+    /// withdraw coin
+    Withdraw{
+        amount: Coin,
+        receiver: String,
     },
 }
 
@@ -97,6 +105,13 @@ pub enum AurandExecuteMsg {
 #[cw_serde]
 #[derive(QueryResponses)]
 pub enum QueryMsg {
+    #[returns(RateDistribution)]
+    GetRateDistribution {},
+
+    #[returns(Vec<PurchasedBox>)]
+    GetUserPurchased {},
+
+
 }
 
 #[cw_serde]

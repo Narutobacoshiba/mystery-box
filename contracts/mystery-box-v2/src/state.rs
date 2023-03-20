@@ -1,6 +1,6 @@
 use std::str::FromStr;
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Addr, Timestamp, Decimal, Uint256, Coin};
+use cosmwasm_std::{Addr, Timestamp, Decimal, Coin};
 use cw_storage_plus::{Item, Map};
 
 use crate::msg::RateDistributionMsg;
@@ -33,6 +33,7 @@ pub struct ItemType {
 
 impl ItemType {
     fn default(name: Option<String>) -> ItemType {
+        // default item type 
         ItemType { 
             name: if name.is_some() {
                 name.unwrap()
@@ -170,12 +171,11 @@ impl RateDistribution {
     }
 
     /// get item type using random number and max_range number
-    /// loop through all item_type and check if random_number in one of these item_type's range_bound
+    /// loop through all item_type and check if the random_number is in one of these item_type's range_bound
     /// range_bound = lower_bound..upper_bound
     pub fn get_item_type_index(&self, random_number: u128, max_range: u128) -> Result<usize, ContractError>{
 
-        let max_range_decimal = Decimal::from_str(&max_range.to_string())
-            .map_err(|_| ContractError::InvalidDecimalFormat{})?;
+        let max_range_decimal = Decimal::from_str(&max_range.to_string()).unwrap();
         let mut current_upper_bound = max_range; // upper bound for first item_type is max_range
 
         for index in 0..(self.vec.len()-1) {
@@ -225,6 +225,13 @@ impl RateDistribution {
     }
     
     /// calculate current purity of item_type at specified index 
+    ///     purity = (h - c) / (h - l)
+    ///        
+    ///         0 <= purity <= 1 
+    /// 
+    /// h: highest rate of an item type
+    /// l: lowest rate of an item type
+    /// c: current rate of an item type
     pub fn purity(&self, index: usize) -> Result<Decimal,ContractError>{
         let item_type = &self.vec[index];
 
@@ -257,21 +264,18 @@ pub struct MysteryBox {
     pub prefix_uri: Option<String>,
     pub tokens_id: Vec<u64>,
     pub total_supply: u64,
+    pub selled: u64,
     pub price: Coin,
     pub created_time: Timestamp,
 }
 
-impl MysteryBox {
-    pub fn remove_token_id(&mut self, index: usize) {
-        self.tokens_id.swap_remove(index);
-    }
-}
 pub const MYSTERY_BOX: Item<MysteryBox> = Item::new("mystery box");
 
 #[cw_serde]
 pub struct PurchasedBox {
     pub buyer: Addr,
     pub purchase_time: Timestamp,
+    pub item_id: Option<String>,
     pub is_opened: bool,
 }
 

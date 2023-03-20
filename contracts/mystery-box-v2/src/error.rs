@@ -9,6 +9,9 @@ pub enum ContractError {
     #[error("Unauthorized")]
     Unauthorized{},
 
+    #[error("InsufficientAmount")]
+    InsufficientAmount{},
+
     #[error("InvalidRandomness")]
     InvalidRandomness{},
 
@@ -39,23 +42,11 @@ pub enum ContractError {
     #[error("InvalidEndTime")]
     InvalidEndTime{},
 
-    #[error("InvalidRarityRate")]
-    InvalidRarityRate{},
-
     #[error("MysteryBoxNotStart")]
     MysteryBoxNotStart{},
-    
-    #[error("InvalidDecimalFormat")]
-    InvalidDecimalFormat{},
 
     #[error("DecimalOperationFail")]
     DecimalOperationFail{},
-
-    #[error("BoxWithIdNotExist")]
-    BoxWithIdNotExist{},
-
-    #[error("SoldOut")]
-    SoldOut{},
     
     #[error("MysteryBoxExpired")]
     MysteryBoxExpired{},

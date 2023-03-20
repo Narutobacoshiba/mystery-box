@@ -2,8 +2,8 @@
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
     to_binary, Binary, Deps, DepsMut, Env, Addr, Api, SubMsg, QueryRequest,
-    MessageInfo, Response, StdResult, WasmMsg, Uint256, ReplyOn, WasmQuery,
-    Reply, Timestamp, Uint128, Coin,
+    MessageInfo, Response, StdResult, WasmMsg, ReplyOn, WasmQuery,
+    Reply, Timestamp, Uint128, Coin, BankMsg
 };
 use cw2::set_contract_version;
 use cw721::{Cw721QueryMsg, Expiration as Cw721Expiration};
@@ -41,7 +41,7 @@ const CONTRACT_NAME: &str = "crates.io:mystery-box";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const INSTANTIATE_BOX_NFT_REPLY_ID: u64 = 1;
-const INSTANTIATE_GIFT_NFT_REPLY_ID: u64 = 2;
+const INSTANTIATE_ITEM_NFT_REPLY_ID: u64 = 2;
 
 const NUMBER_OF_RANDOM: u32 = 1u32;
 const MIN_RANGE_RANDOM: i32 = 0i32;
@@ -93,10 +93,10 @@ pub fn instantiate(
             })?,
             funds: vec![],
             admin: None,
-            label: String::from("Instantiate gift NFT contract"),
+            label: String::from("Instantiate item NFT contract"),
         }
         .into(),
-        id: INSTANTIATE_GIFT_NFT_REPLY_ID,
+        id: INSTANTIATE_ITEM_NFT_REPLY_ID,
         gas_limit: None,
         reply_on: ReplyOn::Success,
     }];
@@ -126,7 +126,7 @@ pub fn reply(deps: DepsMut, _env: Env, msg: Reply) -> Result<Response, ContractE
             CONFIG.save(deps.storage, &config)?;
         },
 
-        INSTANTIATE_GIFT_NFT_REPLY_ID => {
+        INSTANTIATE_ITEM_NFT_REPLY_ID => {
             if config.item_supplier.is_some() {
                 return Err(ContractError::GiftSupplierAlreadyLinked{});
             }
@@ -164,17 +164,17 @@ pub fn execute(
             token_id,
         } => execute_open_box(deps,env,info,token_id),
 
-        ExecuteMsg::BurnBox { 
-            token_id 
-        } => execute_burn_box(deps,env,info,token_id),
-
         ExecuteMsg::ReceiveHexRandomness {
             request_id,
             randomness,
         } => execute_receive_hex_randomness(deps, info, request_id, randomness),
+
+        ExecuteMsg::Withdraw {
+            amount,
+            receiver,
+        } => execute_withdraw(deps,env,info,amount,receiver),
     }
 }
-
 
 
 fn optional_addr_validate(api: &dyn Api, addr: String) -> Result<Addr, ContractError> {
@@ -227,6 +227,7 @@ fn execute_create_mystery_box(
         price,
         total_supply,
         name: name.clone(),
+        selled: 0u64,
         prefix_uri: None,
         created_time: block_time, 
     })?;
@@ -284,11 +285,6 @@ fn execute_mint_box(
     let box_supplier = config.box_supplier.unwrap();
     
     let mut mystery_box = MYSTERY_BOX.load(deps.storage)?;
-    // check if box sold out
-    let box_supply = mystery_box.total_supply;
-    if box_supply == 0 {
-        return Err(ContractError::SoldOut{});
-    }
 
     // check denom and get amount
     let denom = mystery_box.price.denom.clone();
@@ -319,7 +315,7 @@ fn execute_mint_box(
     let token_id = make_id(vec![
         env.contract.address.to_string(),
         block_time.to_string(), 
-        box_supply.to_string()
+        mystery_box.selled.to_string()
     ]);
 
     // create mint message NFT for the sender
@@ -334,13 +330,14 @@ fn execute_mint_box(
         funds: vec![],
     };
     
-    // reduce box supply by 1
-    mystery_box.total_supply -= 1;
+    // increase box selled by 1
+    mystery_box.selled += 1;
     MYSTERY_BOX.save(deps.storage, &mystery_box)?;
 
     PURCHASED_BOXES.save(deps.storage, token_id.clone(), &PurchasedBox { 
         buyer: info.sender.clone(), 
         purchase_time: block_time, 
+        item_id: None,
         is_opened: false 
     })?;
 
@@ -349,16 +346,6 @@ fn execute_mint_box(
             .add_attribute("token_id", token_id)
             .add_attribute("buyer", info.sender))
 }
-
-fn execute_burn_box(
-    deps: DepsMut,
-    env: Env,
-    info: MessageInfo,
-    token_id: String,
-) -> Result<Response, ContractError> {
-    Ok(Response::new())
-}
-
 
 fn execute_open_box(
     deps: DepsMut,
@@ -383,6 +370,7 @@ fn execute_open_box(
     let PurchasedBox{
         buyer,
         purchase_time,
+        item_id,
         is_opened
     } = PURCHASED_BOXES.load(deps.storage, token_id.clone())?;
 
@@ -485,6 +473,7 @@ fn execute_open_box(
     PURCHASED_BOXES.save(deps.storage, token_id.clone(), &PurchasedBox { 
         purchase_time,
         buyer: buyer.clone(), 
+        item_id,
         is_opened: true
     })?;
 
@@ -522,7 +511,7 @@ fn execute_receive_hex_randomness(
 
     // get job by request id
     let Job{sender}= JOBS.load(deps.storage, request_id.clone())?;
-    let token_id = request_id.clone();
+    let box_token_id = request_id.clone();
 
     // get mystery box 
     let mut mystery_box = MYSTERY_BOX.load(deps.storage)?;
@@ -534,6 +523,7 @@ fn execute_receive_hex_randomness(
 
     let random_index = randomness[0] as usize;
     
+    // get index of item_type based on aurand randomness
     let index = mystery_box.rate_distribution.get_item_type_index(
         random_index as u128, 
         MAX_RANGE_RANDOM as u128
@@ -544,21 +534,21 @@ fn execute_receive_hex_randomness(
     mystery_box.rate_distribution.update_item_type(index)?;
     let item_type = mystery_box.rate_distribution.vec[index].clone();
 
+    // get list of tokens id
     let tokens_id = mystery_box.tokens_id.clone();
 
-    // random token id index
+    // random token id index using aurand randomnesss
     let tokens_id_index = random_index % tokens_id.len();
 
-    // get and remove choosen token id
-    let token_uri_index = tokens_id[tokens_id_index];
-    mystery_box.remove_token_id(tokens_id_index);
+    // get item token id by index
+    let item_token_id = tokens_id[tokens_id_index];
 
     let prefix_uri = mystery_box.prefix_uri.clone();
-    // token uri made by combining token_uri
-    let unique_token_uri = format!("{}{}",prefix_uri.unwrap(),token_uri_index);
+    // token uri made by combining prefix_uri and item_token_id
+    let unique_token_uri = format!("{}{}",prefix_uri.unwrap(),item_token_id);
 
     // token id made by combining box id and token id 
-    let unique_token_id = make_id(vec![token_id.clone(), token_uri_index.to_string()]);
+    let unique_token_id = make_id(vec![box_token_id.clone(), item_token_id.to_string()]);
 
     let extension = Some(Cw721RarityMetadata {
         rarity: item_type.name,  
@@ -580,11 +570,63 @@ fn execute_receive_hex_randomness(
 
     MYSTERY_BOX.save(deps.storage, &mystery_box)?;
 
+    PURCHASED_BOXES.update(deps.storage, box_token_id.clone(),|p| -> StdResult<_> { Ok(PurchasedBox { 
+        purchase_time: p.purchase_time,
+        buyer: p.buyer.clone(), 
+        item_id: Some(unique_token_id.clone()),
+        is_opened: true
+    })})?;
+
     Ok(Response::new().add_message(mint_msg)
                 .add_attribute("action", "receive_hex_randomness")
                 .add_attribute("token_id", unique_token_id)
                 .add_attribute("token_uri", unique_token_uri)
+                .add_attribute("box_token_id", box_token_id)
                 .add_attribute("minter", sender))
+}
+
+fn execute_withdraw(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    amount: Coin,
+    receiver: String,
+) -> Result<Response, ContractError> {
+    
+    let config = CONFIG.load(deps.storage)?;
+
+    if config.owner != info.sender {
+        return Err(ContractError::Unauthorized{});
+    }
+
+    let receiver_addr = optional_addr_validate(deps.api, receiver)?;
+
+    // check if sufficient balance
+    let contract_balance: StdResult<Coin> = deps.querier.query_balance(
+        env.contract.address.to_string(),
+        amount.denom.clone(),
+    );
+    match contract_balance {
+        Ok(balance) => {
+            if balance.amount < amount.amount {
+                return Err(ContractError::InsufficientAmount{});
+            }
+        }
+        Err(_) => {
+            return Err(ContractError::InsufficientAmount{});
+        }
+    }
+
+    // create bank msg to send amount to receiver
+    let bank_msg = BankMsg::Send { 
+        to_address: receiver_addr.to_string(), 
+        amount: vec![amount.clone()] 
+    };
+
+    Ok(Response::new().add_message(bank_msg)
+            .add_attribute("action", "withdraw")
+            .add_attribute("amount", amount.to_string())
+            .add_attribute("receiver", receiver_addr.to_string()))
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
