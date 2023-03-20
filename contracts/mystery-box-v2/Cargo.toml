@@ -43,11 +43,18 @@ optimize = """docker run --rm -v "$(pwd)":/code \
 cosmwasm-schema = "1.1.2"
 cosmwasm-std = "1.1.2"
 cosmwasm-storage = "1.1.2"
-cw-storage-plus = "0.13.2"
-cw2 = "0.13.2"
+cw-storage-plus = "1.0.1"
+cw2 = "1.0.1"
 schemars = "0.8.8"
 serde = { version = "1.0.137", default-features = false, features = ["derive"] }
 thiserror = { version = "1.0.31" }
+cw721 = "0.16.0"
+cw721-base = { version = "0.16.0", features = ["library"] }
+cw721-rarity = { path = "../cw721-rarity", version = "0.1.0", features = ["library",] }
+hex = "0.4.3"
+sha2 = { version = "0.10.6", default-features = false, features = ["oid"] }
+cw-utils = "1.0.1"
+chrono = {version = "0.4.9", default-features = false, features = ["clock"]}
 
 [dev-dependencies]
 cw-multi-test = "0.13.2"

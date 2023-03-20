@@ -28,6 +28,7 @@ pub struct Metadata {
     pub youtube_url: Option<String>,
     /// this is rarity of nft
     pub rarity: String,
+    pub purity: String,
 }
 
 pub type Extension = Option<Metadata>;

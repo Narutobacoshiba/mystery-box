@@ -7,10 +7,65 @@ pub enum ContractError {
     Std(#[from] StdError),
 
     #[error("Unauthorized")]
-    Unauthorized {},
+    Unauthorized{},
+
+    #[error("InvalidRandomness")]
+    InvalidRandomness{},
+
+    #[error("PriceInsufficient")]
+    PriceInsufficient{},
+
+    #[error("InvalidAddress")]
+    InvalidAddress{},
+    
+    #[error("Uint256OperatorError")]
+    Uint256OperatorError{},
+    
+    #[error("SupplierAlreadyLinked")]
+    BoxSupplierAlreadyLinked{},
+
+    #[error("BoxSupplierNotLinked")]
+    BoxSupplierNotLinked{},
+
+    #[error("GiftSupplierAlreadyLinked")]
+    GiftSupplierAlreadyLinked{},
+
+    #[error("GiftSupplierNotLinked")]
+    GiftSupplierNotLinked{},
+
+    #[error("InvalidTokenReplyId")]
+    InvalidTokenReplyId{},
+
+    #[error("InvalidEndTime")]
+    InvalidEndTime{},
+
+    #[error("InvalidRarityRate")]
+    InvalidRarityRate{},
+
+    #[error("MysteryBoxNotStart")]
+    MysteryBoxNotStart{},
+    
+    #[error("InvalidDecimalFormat")]
+    InvalidDecimalFormat{},
+
+    #[error("DecimalOperationFail")]
+    DecimalOperationFail{},
+
+    #[error("BoxWithIdNotExist")]
+    BoxWithIdNotExist{},
+
+    #[error("SoldOut")]
+    SoldOut{},
+    
+    #[error("MysteryBoxExpired")]
+    MysteryBoxExpired{},
+
+    #[error("TokenNotRecognized")]
+    TokenNotRecognized{},
+
+    #[error("BoxOpened")]
+    BoxOpened{},
 
     #[error("Custom Error val: {val:?}")]
     CustomError { val: String },
-    // Add any other custom errors you like here.
-    // Look at https://docs.rs/thiserror/1.0.21/thiserror/ for details.
 }
