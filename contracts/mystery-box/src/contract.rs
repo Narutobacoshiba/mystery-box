@@ -93,7 +93,7 @@ pub fn instantiate(
             })?,
             funds: vec![],
             admin: None,
-            label: String::from("Instantiate gift NFT contract"),
+            label: String::from("Instantiate item NFT contract"),
         }
         .into(),
         id: INSTANTIATE_GIFT_NFT_REPLY_ID,

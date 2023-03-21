@@ -1,1 +1,15 @@
 name = "mystery-box"
+
+gas_price = '0.025ueaura'
+gas_adjustment = 1.3
+account_prefix = 'aura'
+derivation_path = '''m/44'/118'/0'/0/0'''
+
+[networks.euphoria]
+chain_id = 'euphoria-2'
+network_variant = 'Shared'
+grpc_endpoint = 'http://grpc.euphoria.aura.network:9090'
+rpc_endpoint = 'https://rpc.euphoria.aura.network'
+
+[accounts.signer]
+mnemonic = 'deputy cousin control dentist cost rich mention stomach rabbit amazing glove gain lend sign bronze mushroom task wedding captain add script wrestle repair camp'

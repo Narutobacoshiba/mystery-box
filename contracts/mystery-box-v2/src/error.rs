@@ -30,11 +30,11 @@ pub enum ContractError {
     #[error("BoxSupplierNotLinked")]
     BoxSupplierNotLinked{},
 
-    #[error("GiftSupplierAlreadyLinked")]
-    GiftSupplierAlreadyLinked{},
+    #[error("ItemSupplierAlreadyLinked")]
+    ItemSupplierAlreadyLinked{},
 
-    #[error("GiftSupplierNotLinked")]
-    GiftSupplierNotLinked{},
+    #[error("ItemSupplierNotLinked")]
+    ItemSupplierNotLinked{},
 
     #[error("InvalidTokenReplyId")]
     InvalidTokenReplyId{},
@@ -57,6 +57,18 @@ pub enum ContractError {
     #[error("BoxOpened")]
     BoxOpened{},
 
+    #[error("MysteryBoxNotInitialized")]
+    MysteryBoxNotInitialized{},
+
+    #[error("MysteryBoxInitialized")]
+    MysteryBoxInOperation{},
+
+    #[error("MysteryBoxNotUpdated")]
+    MysteryBoxNotUpdated{},
+
+    #[error("SoldOut")]
+    SoldOut{},
+    
     #[error("Custom Error val: {val:?}")]
     CustomError { val: String },
 }

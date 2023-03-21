@@ -3,7 +3,7 @@ use cosmwasm_std::entry_point;
 use cosmwasm_std::{
     to_binary, Binary, Deps, DepsMut, Env, Addr, Api, SubMsg, QueryRequest,
     MessageInfo, Response, StdResult, WasmMsg, ReplyOn, WasmQuery,
-    Reply, Timestamp, Uint128, Coin, BankMsg
+    Reply, Timestamp, Uint128, Coin, BankMsg, Empty
 };
 use cw2::set_contract_version;
 use cw721::{Cw721QueryMsg, Expiration as Cw721Expiration};
@@ -23,13 +23,13 @@ use cw_utils::parse_reply_instantiate_data;
 use crate::error::ContractError;
 use crate::msg::{
     InstantiateMsg, ExecuteMsg, QueryMsg, AurandExecuteMsg,
-    BoxInfo, RateDistributionMsg,
+    BoxInfo, RateDistributionMsg, LinkedArress,
 };
 use crate::state::{
     CONFIG, Config,
     JOBS, Job, RateDistribution,
     MYSTERY_BOX, MysteryBox, 
-    PurchasedBox, PURCHASED_BOXES
+    PurchasedBox, PURCHASED_BOXES, MYSTERY_BOX_HISTORY
 };
 use crate::utils::{
     make_id,
@@ -128,7 +128,7 @@ pub fn reply(deps: DepsMut, _env: Env, msg: Reply) -> Result<Response, ContractE
 
         INSTANTIATE_ITEM_NFT_REPLY_ID => {
             if config.item_supplier.is_some() {
-                return Err(ContractError::GiftSupplierAlreadyLinked{});
+                return Err(ContractError::ItemSupplierAlreadyLinked{});
             }
 
             config.item_supplier = Some(optional_addr_validate(deps.api, reply.contract_address)?);
@@ -192,48 +192,79 @@ fn execute_create_mystery_box(
 ) -> Result<Response, ContractError> {
 
     let config = CONFIG.load(deps.storage)?;
-
+    // check if sender is owner of this contract
     if config.owner != info.sender {
         return Err(ContractError::Unauthorized{});
     }
 
+    // current block timestamp
+    let block_time: Timestamp = env.block.time;
+
+    // check if mystery box has been initialized
+    if let Some(mystery_box) = MYSTERY_BOX.may_load(deps.storage)?{
+        // if mystery-box has expired, save current mystery-box to history and create the new one
+        // else return error
+        if mystery_box.end_time < block_time {
+            MYSTERY_BOX_HISTORY.save(deps.storage, mystery_box.id.clone(), &mystery_box)?;
+        }else{
+            return Err(ContractError::MysteryBoxInOperation{});
+        }
+    }
+
     let BoxInfo{
         name,
+        description,
         start_time,
         end_time,
         total_supply,
-        price,
+        max_item_supply,
+        amount,
+        denom,
     } = box_info;
 
+    // convert start_time and end_time string to Timestamp
     let start_time: Timestamp = convert_datetime_string(start_time)?;
     let end_time: Timestamp = convert_datetime_string(end_time)?;
 
-    let block_time: Timestamp = env.block.time;
-
+    // check if the end time is past
     if end_time <= block_time {
         return Err(ContractError::InvalidEndTime{});
     } 
 
+    // generate unique id using contract address and current block timestamp
+    let id = make_id(vec![
+        env.contract.address.to_string(),
+        block_time.to_string(),
+    ]);
+
+    // init rate distribution for mystery box
     let rate_distribution: RateDistribution = RateDistribution::new(rate_distribution, default_type)?;
     
-    // list of nft id
+    // list of nft id from 0 to total_supply
     let tokens_id = (0u64..=total_supply).collect::<Vec<_>>();
 
     MYSTERY_BOX.save(deps.storage, &MysteryBox {  
+        description,
         start_time, 
         end_time, 
         rate_distribution,  
         tokens_id,
-        price,
         total_supply,
+        id: id.clone(),
         name: name.clone(),
-        selled: 0u64,
+        price: Coin {denom, amount},
+        max_item_supply: if max_item_supply.is_some(){
+            max_item_supply.unwrap()
+        }else{
+            u64::MAX
+        },
         prefix_uri: None,
         created_time: block_time, 
     })?;
 
     Ok(Response::new().add_attribute("action", "create_mystery_box")
-                .add_attribute("box_name", name)
+                .add_attribute("id", id)
+                .add_attribute("name", name)
                 .add_attribute("start_time", start_time.to_string())
                 .add_attribute("end_time", end_time.to_string())
                 .add_attribute("create_time", block_time.to_string()))
@@ -246,21 +277,27 @@ fn execute_update_mystery_box(
     prefix_url: String,
 ) -> Result<Response, ContractError> {
     let config = CONFIG.load(deps.storage)?;
-
+    // check if sender is owner of this contract
     if config.owner != info.sender {
         return Err(ContractError::Unauthorized{});
     }
 
-    let mut mystery_box = MYSTERY_BOX.load(deps.storage)?;
+    // check if mystery box has been initialized
+    let mut mystery_box = if let Some(mb) = MYSTERY_BOX.may_load(deps.storage)?{
+        mb
+    }else{
+        return Err(ContractError::MysteryBoxNotInitialized{});
+    };
 
+    // check if mystery box already updated
     if mystery_box.prefix_uri.is_some() {
         return Err(ContractError::CustomError {val: String::from("mystery box already updated!")});
     }
 
-    // check if mystery box has been started
+    // check if mystery box has expired
     let block_time = env.block.time;
-    if block_time >= mystery_box.start_time {
-        return Err(ContractError::CustomError {val: String::from("mystery box has been started!")});
+    if block_time > mystery_box.end_time {
+        return Err(ContractError::CustomError {val: String::from("mystery box has expired!")});
     }
 
     mystery_box.prefix_uri = Some(prefix_url);
@@ -284,7 +321,17 @@ fn execute_mint_box(
     }
     let box_supplier = config.box_supplier.unwrap();
     
-    let mut mystery_box = MYSTERY_BOX.load(deps.storage)?;
+    // check if mystery box has been initialized
+    let mut mystery_box = if let Some(mb) = MYSTERY_BOX.may_load(deps.storage)?{
+        mb
+    }else{
+        return Err(ContractError::MysteryBoxNotInitialized{});
+    };
+
+    //  check if mystery box sold-out
+    if mystery_box.max_item_supply == 0 {
+        return Err(ContractError::SoldOut{});
+    }
 
     // check denom and get amount
     let denom = mystery_box.price.denom.clone();
@@ -298,10 +345,11 @@ fn execute_mint_box(
         }
     };
 
+    // if send amount smaller than mystery-box price, return fail
     let price = mystery_box.price.amount;
     if sent_amount < price {
         return Err(ContractError::CustomError{
-            val: String::from("Insufficient fee! required")                        
+            val: String::from("Insufficient fee! required ")                        
             + &price.to_string() + &denom}); 
     }
 
@@ -311,17 +359,23 @@ fn execute_mint_box(
         return Err(ContractError::MysteryBoxExpired{});
     }
 
-    // generate unique token id using mystery box address, block time, current box supply
-    let token_id = make_id(vec![
+    // prefix_token_id is box id
+    // can be used to check which mystery box the NFT item belongs to
+    let prefix_token_id = mystery_box.id.clone();
+    // generate suffix token id using mystery box address, block time, current box supply
+    let suffix_token_id = make_id(vec![
         env.contract.address.to_string(),
         block_time.to_string(), 
-        mystery_box.selled.to_string()
+        mystery_box.max_item_supply.to_string()
     ]);
+    
+    // unique token id is combine of prefix_token_id and suffix_token_id
+    let token_id = format!("{}_{}",prefix_token_id,suffix_token_id);
 
     // create mint message NFT for the sender
     let mint_msg = WasmMsg::Execute {
         contract_addr: box_supplier.to_string(),
-        msg: to_binary(&Cw721ExecuteMsg::<Cw721Extension, Cw721Extension>::Mint(MintMsg {
+        msg: to_binary(&Cw721ExecuteMsg::<Cw721Extension, Empty>::Mint(MintMsg {
             token_id: token_id.clone(),
             owner: info.sender.to_string(),
             token_uri: None,
@@ -331,13 +385,13 @@ fn execute_mint_box(
     };
     
     // increase box selled by 1
-    mystery_box.selled += 1;
+    mystery_box.max_item_supply -= 1;
     MYSTERY_BOX.save(deps.storage, &mystery_box)?;
 
+    // update purchased box history
     PURCHASED_BOXES.save(deps.storage, token_id.clone(), &PurchasedBox { 
         buyer: info.sender.clone(), 
         purchase_time: block_time, 
-        item_id: None,
         is_opened: false 
     })?;
 
@@ -361,7 +415,17 @@ fn execute_open_box(
     }
     let box_supplier = config.box_supplier.unwrap();
 
-    let mystery_box = MYSTERY_BOX.load(deps.storage)?;
+    // check if mystery box has been initialized
+    let mystery_box = if let Some(mb) = MYSTERY_BOX.may_load(deps.storage)?{
+        mb
+    }else{
+        return Err(ContractError::MysteryBoxNotInitialized{});
+    };
+    
+    // check if mystery box has been updated
+    if mystery_box.prefix_uri.is_none(){
+        return Err(ContractError::MysteryBoxNotUpdated{});
+    }
 
     // check if box with id exist
     if !PURCHASED_BOXES.has(deps.storage, token_id.clone()) {
@@ -370,7 +434,6 @@ fn execute_open_box(
     let PurchasedBox{
         buyer,
         purchase_time,
-        item_id,
         is_opened
     } = PURCHASED_BOXES.load(deps.storage, token_id.clone())?;
 
@@ -459,7 +522,7 @@ fn execute_open_box(
 
     let burn_msg = WasmMsg::Execute {
         contract_addr: box_supplier.to_string(),
-        msg: to_binary(&Cw721ExecuteMsg::<Cw721Extension, Cw721Extension>::Burn{
+        msg: to_binary(&Cw721ExecuteMsg::<Cw721Extension, Empty>::Burn{
             token_id: token_id.clone()
         })?,
         funds: vec![],
@@ -473,7 +536,6 @@ fn execute_open_box(
     PURCHASED_BOXES.save(deps.storage, token_id.clone(), &PurchasedBox { 
         purchase_time,
         buyer: buyer.clone(), 
-        item_id,
         is_opened: true
     })?;
 
@@ -500,9 +562,9 @@ fn execute_receive_hex_randomness(
 
     // must link to a cw721 item contract
     if config.item_supplier.is_none() {
-        return Err(ContractError::GiftSupplierNotLinked{});
+        return Err(ContractError::ItemSupplierNotLinked{});
     }
-    let gift_supplier = config.item_supplier.unwrap();
+    let item_supplier = config.item_supplier.unwrap();
 
     // check if a job with job_id exist
     if !JOBS.has(deps.storage, request_id.clone()) {
@@ -511,9 +573,18 @@ fn execute_receive_hex_randomness(
 
     // get job by request id
     let Job{sender}= JOBS.load(deps.storage, request_id.clone())?;
-    let box_token_id = request_id.clone();
 
-    // get mystery box 
+    // request id is also id for user's purchased box
+    // it will be use to provide unique token id for nft item
+    let item_token_id = request_id.clone();
+
+    // check if some one already buy item with item_token_id as id
+    if !PURCHASED_BOXES.has(deps.storage, item_token_id.clone()){
+        return Err(ContractError::TokenNotRecognized{});
+    }
+
+    // get mystery box
+    // at this poin mystery-box must created so don't need to check it
     let mut mystery_box = MYSTERY_BOX.load(deps.storage)?;
     
     // check if randomness valid
@@ -521,6 +592,8 @@ fn execute_receive_hex_randomness(
         return Err(ContractError::InvalidRandomness{});
     }
 
+    // randomness received from aurand contract 
+    // it between MIN_RANGE_RANDOM..MAX_RANGE_RANDOM
     let random_index = randomness[0] as usize;
     
     // get index of item_type based on aurand randomness
@@ -529,27 +602,30 @@ fn execute_receive_hex_randomness(
         MAX_RANGE_RANDOM as u128
     )?;
 
+    // get current purity of item_type at specified index
     let purity = mystery_box.rate_distribution.purity(index)?;
 
+    // update supply and rate for item_type at specifed index
     mystery_box.rate_distribution.update_item_type(index)?;
+
+    // get item_type by index
     let item_type = mystery_box.rate_distribution.vec[index].clone();
 
-    // get list of tokens id
+    // get a list of token ids provided
     let tokens_id = mystery_box.tokens_id.clone();
 
-    // random token id index using aurand randomnesss
+    // random tokens id index using aurand randomnesss
     let tokens_id_index = random_index % tokens_id.len();
 
     // get item token id by index
-    let item_token_id = tokens_id[tokens_id_index];
+    let token_id = tokens_id[tokens_id_index];
 
     let prefix_uri = mystery_box.prefix_uri.clone();
-    // token uri made by combining prefix_uri and item_token_id
-    let unique_token_uri = format!("{}{}",prefix_uri.unwrap(),item_token_id);
+    
+    // token uri made by combining prefix_uri and token_id
+    let unique_token_uri = format!("{}{}",prefix_uri.unwrap(),token_id);
 
-    // token id made by combining box id and token id 
-    let unique_token_id = make_id(vec![box_token_id.clone(), item_token_id.to_string()]);
-
+    // cw721rarity metadata
     let extension = Some(Cw721RarityMetadata {
         rarity: item_type.name,  
         purity: purity.to_string(),
@@ -558,11 +634,11 @@ fn execute_receive_hex_randomness(
 
     // create mint message NFT for the sender
     let mint_msg = WasmMsg::Execute {
-        contract_addr: gift_supplier.to_string(),
+        contract_addr: item_supplier.to_string(),
         msg: to_binary(&Cw721RarityExecuteMsg::Mint(MintMsg {
-            token_id: unique_token_id.clone(),
+            token_id: item_token_id.clone(), // unique token id
             owner: sender.clone().to_string(),
-            token_uri: Some(unique_token_uri.clone()),
+            token_uri: Some(unique_token_uri.clone()), // unique token uri
             extension,
         }))?,
         funds: vec![],
@@ -570,18 +646,10 @@ fn execute_receive_hex_randomness(
 
     MYSTERY_BOX.save(deps.storage, &mystery_box)?;
 
-    PURCHASED_BOXES.update(deps.storage, box_token_id.clone(),|p| -> StdResult<_> { Ok(PurchasedBox { 
-        purchase_time: p.purchase_time,
-        buyer: p.buyer.clone(), 
-        item_id: Some(unique_token_id.clone()),
-        is_opened: true
-    })})?;
-
     Ok(Response::new().add_message(mint_msg)
                 .add_attribute("action", "receive_hex_randomness")
-                .add_attribute("token_id", unique_token_id)
+                .add_attribute("token_id", item_token_id)
                 .add_attribute("token_uri", unique_token_uri)
-                .add_attribute("box_token_id", box_token_id)
                 .add_attribute("minter", sender))
 }
 
@@ -601,23 +669,25 @@ fn execute_withdraw(
 
     let receiver_addr = optional_addr_validate(deps.api, receiver)?;
 
-    // check if sufficient balance
+    // check if contract sufficient balance
     let contract_balance: StdResult<Coin> = deps.querier.query_balance(
         env.contract.address.to_string(),
         amount.denom.clone(),
     );
     match contract_balance {
         Ok(balance) => {
+            // if current balance smaller than required amount
             if balance.amount < amount.amount {
                 return Err(ContractError::InsufficientAmount{});
             }
         }
+        // if not found balance for denom
         Err(_) => {
             return Err(ContractError::InsufficientAmount{});
         }
     }
 
-    // create bank msg to send amount to receiver
+    // create bank msg to send amount from contract to receiver
     let bank_msg = BankMsg::Send { 
         to_address: receiver_addr.to_string(), 
         amount: vec![amount.clone()] 
@@ -630,11 +700,39 @@ fn execute_withdraw(
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(_deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     // TODO: add query for MarketplaceInfo here
     match msg {
+        QueryMsg::GetRateDistribution{} => to_binary(&query_rate_distribution(deps)?),
+        QueryMsg::GetMysteryBoxInformation{} => to_binary(&query_mystery_box_information(deps)?),
+        QueryMsg::GetMysteryBoxHistoryById { id } => to_binary(&query_mystery_box_history_by_id(deps, id)?),
+        QueryMsg::GetLinkedAddres{} => to_binary(&query_linked_address(deps)?),
     }
 }
-//https://academy.binance.com/en/articles/what-are-nft-mystery-boxes-and-how-do-they-work
 
+pub fn query_rate_distribution(deps: Deps) -> StdResult<Option<RateDistribution>> {
+    if let Some(mystery_box) = MYSTERY_BOX.may_load(deps.storage)? {
+        return Ok(Some(mystery_box.rate_distribution));
+    }else{
+        return Ok(None)
+    }
+}
+
+pub fn query_mystery_box_information(deps: Deps) -> StdResult<Option<MysteryBox>> {
+    Ok(MYSTERY_BOX.may_load(deps.storage)?)
+}
+
+pub fn query_mystery_box_history_by_id(deps: Deps, id: String) -> StdResult<Option<MysteryBox>> {
+    Ok(MYSTERY_BOX_HISTORY.may_load(deps.storage, id)?)
+}
+
+pub fn query_linked_address(deps: Deps) -> StdResult<LinkedArress> {
+    let config = CONFIG.load(deps.storage)?;
+
+    Ok(LinkedArress { 
+        aurand_address: config.aurand_address, 
+        box_supplier_address: config.box_supplier, 
+        item_supplier_address: config.item_supplier,
+    })
+}
 

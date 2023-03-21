@@ -1,1 +1,29 @@
-{}
+{
+  "euphoria": {
+    "cw721": {
+      "code_id": 553,
+      "addresses": {},
+      "proposal": {
+        "store_code": null
+      }
+    },
+    "cw721-rarity": {
+      "code_id": 554,
+      "addresses": {},
+      "proposal": {
+        "store_code": null
+      }
+    },
+    "mystery-box-v2": {
+      "code_id": 570,
+      "addresses": {
+        "mystery-box": "aura1ql6yjlst5wl6kekjk3xeka3vky4g0e792td389vm0y5wnsr2ptesxv3vvx",
+        "mystery-box-v2": "aura1r7l8ayn0gpf3xtumkqzs7atrtfjdw920hd67acmesxjx6t8yz9ws4yupfv",
+        "mystery-box-1": "aura1zd8nh59pyswhle8m4hkpasmc5fxalpdc60prcw3ezuw8dve7ly7ql420y8"
+      },
+      "proposal": {
+        "store_code": null
+      }
+    }
+  }
+}

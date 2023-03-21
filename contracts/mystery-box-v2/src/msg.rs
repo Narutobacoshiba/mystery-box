@@ -1,6 +1,6 @@
 use cosmwasm_schema::{cw_serde,QueryResponses};
-use cosmwasm_std::{Coin,Decimal};
-use crate::state::{RateDistribution,PurchasedBox};
+use cosmwasm_std::{Coin,Decimal, Addr, Uint128};
+use crate::state::{RateDistribution,MysteryBox};
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -73,12 +73,16 @@ pub enum ExecuteMsg {
 #[cw_serde]
 pub struct BoxInfo {
     pub name: String,
+    pub description: String,
     pub start_time: String,
     pub end_time: String,
     pub total_supply: u64,
-    pub price: Coin,
+    pub max_item_supply: Option<u64>,
+    pub amount: Uint128,
+    pub denom: String,
 }
 
+//
 #[cw_serde]
 pub struct ItemTypeMsg {
     pub name: String,
@@ -105,16 +109,23 @@ pub enum AurandExecuteMsg {
 #[cw_serde]
 #[derive(QueryResponses)]
 pub enum QueryMsg {
-    #[returns(RateDistribution)]
+    #[returns(Option<RateDistribution>)]
     GetRateDistribution {},
 
-    #[returns(Vec<PurchasedBox>)]
-    GetUserPurchased {},
+    #[returns(Option<MysteryBox>)]
+    GetMysteryBoxInformation {},
 
+    #[returns(Option<MysteryBox>)]
+    GetMysteryBoxHistoryById {id: String},
 
+    #[returns(LinkedArress)]
+    GetLinkedAddres {},
 }
 
+
 #[cw_serde]
-pub struct Metadata {
-    pub rarity: String,
+pub struct LinkedArress {
+    pub aurand_address: Addr,
+    pub box_supplier_address: Option<Addr>,
+    pub item_supplier_address: Option<Addr>,
 }

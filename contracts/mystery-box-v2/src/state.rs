@@ -123,7 +123,8 @@ impl RateDistribution {
             vec: Vec::new()
         };
 
-        let mut total_rate = one;
+        // total rate of all item type
+        let mut total_rate = zero;
         for item_msg in init_distribution.vec.iter() {
 
             // check if 0 < rate < 1
@@ -242,40 +243,32 @@ impl RateDistribution {
         let purity = (max_rate_modifier - current_rate_modifier) / (max_rate_modifier - min_rate_modifier);
         Ok(purity) 
     }
-
-
-    pub fn total_supply(&self) -> u64 {
-    
-        let mut total_supply = 0u64;
-        for r in self.vec.iter() {
-            total_supply += r.supply as u64;
-        }
-    
-        return total_supply;
-    }
 }
 
 #[cw_serde]
 pub struct MysteryBox {
+    pub id: String,
     pub name: String,
+    pub description: String,
     pub start_time: Timestamp,
     pub end_time: Timestamp,
     pub rate_distribution: RateDistribution,
     pub prefix_uri: Option<String>,
     pub tokens_id: Vec<u64>,
     pub total_supply: u64,
-    pub selled: u64,
+    pub max_item_supply: u64,
     pub price: Coin,
     pub created_time: Timestamp,
 }
 
 pub const MYSTERY_BOX: Item<MysteryBox> = Item::new("mystery box");
 
+pub const MYSTERY_BOX_HISTORY: Map<String, MysteryBox> = Map::new("mystery box history"); 
+
 #[cw_serde]
 pub struct PurchasedBox {
     pub buyer: Addr,
     pub purchase_time: Timestamp,
-    pub item_id: Option<String>,
     pub is_opened: bool,
 }
 
