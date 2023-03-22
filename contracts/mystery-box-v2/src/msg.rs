@@ -78,8 +78,7 @@ pub struct BoxInfo {
     pub end_time: String,
     pub total_supply: u64,
     pub max_item_supply: Option<u64>,
-    pub amount: Uint128,
-    pub denom: String,
+    pub price: Coin
 }
 
 //

@@ -40,7 +40,7 @@ pub enum ContractError {
     InvalidTokenReplyId{},
 
     #[error("InvalidEndTime")]
-    InvalidEndTime{},
+    InvalidTime{},
 
     #[error("MysteryBoxNotStart")]
     MysteryBoxNotStart{},
@@ -56,6 +56,9 @@ pub enum ContractError {
 
     #[error("BoxOpened")]
     BoxOpened{},
+
+    #[error("BoxNotOpened")]
+    BoxNotOpened{},
 
     #[error("MysteryBoxNotInitialized")]
     MysteryBoxNotInitialized{},

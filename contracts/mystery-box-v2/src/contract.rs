@@ -218,17 +218,16 @@ fn execute_create_mystery_box(
         end_time,
         total_supply,
         max_item_supply,
-        amount,
-        denom,
+        price
     } = box_info;
 
     // convert start_time and end_time string to Timestamp
     let start_time: Timestamp = convert_datetime_string(start_time)?;
     let end_time: Timestamp = convert_datetime_string(end_time)?;
 
-    // check if the end time is past
-    if end_time <= block_time {
-        return Err(ContractError::InvalidEndTime{});
+    // check if the end time is past and start_time <= end_time
+    if end_time <= block_time && start_time <= end_time {
+        return Err(ContractError::InvalidTime{});
     } 
 
     // generate unique id using contract address and current block timestamp
@@ -250,9 +249,9 @@ fn execute_create_mystery_box(
         rate_distribution,  
         tokens_id,
         total_supply,
+        price,
         id: id.clone(),
         name: name.clone(),
-        price: Coin {denom, amount},
         max_item_supply: if max_item_supply.is_some(){
             max_item_supply.unwrap()
         }else{
@@ -553,18 +552,26 @@ fn execute_receive_hex_randomness(
     request_id: String,
     randomness: Vec<i32>,
 ) -> Result<Response, ContractError> {
+
     let config = CONFIG.load(deps.storage)?;
 
     // only accept randomness from aurand contract
     if config.aurand_address != info.sender {
         return Err(ContractError::Unauthorized{});
     }
-
+    
     // must link to a cw721 item contract
     if config.item_supplier.is_none() {
         return Err(ContractError::ItemSupplierNotLinked{});
     }
     let item_supplier = config.item_supplier.unwrap();
+
+    // check if mystery box has been initialized
+    let mut mystery_box = if let Some(mb) = MYSTERY_BOX.may_load(deps.storage)?{
+        mb
+    }else{
+        return Err(ContractError::MysteryBoxNotInitialized{});
+    };
 
     // check if a job with job_id exist
     if !JOBS.has(deps.storage, request_id.clone()) {
@@ -578,15 +585,19 @@ fn execute_receive_hex_randomness(
     // it will be use to provide unique token id for nft item
     let item_token_id = request_id.clone();
 
-    // check if some one already buy item with item_token_id as id
-    if !PURCHASED_BOXES.has(deps.storage, item_token_id.clone()){
+    // check if sender already buy an item with item_token_id as id
+    // and it was opened
+    if let Some(purchased_box) = PURCHASED_BOXES.may_load(deps.storage, item_token_id.clone())?{
+        if purchased_box.buyer != sender.clone(){
+            return Err(ContractError::Unauthorized{});
+        }
+        if !purchased_box.is_opened {
+            return Err(ContractError::BoxNotOpened{})
+        }
+    }else{
         return Err(ContractError::TokenNotRecognized{});
     }
 
-    // get mystery box
-    // at this poin mystery-box must created so don't need to check it
-    let mut mystery_box = MYSTERY_BOX.load(deps.storage)?;
-    
     // check if randomness valid
     if randomness.len() != 1 || randomness[0] < MIN_RANGE_RANDOM || randomness[0] > MAX_RANGE_RANDOM {
         return Err(ContractError::InvalidRandomness{});
