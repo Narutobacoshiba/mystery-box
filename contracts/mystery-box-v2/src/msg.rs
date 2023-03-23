@@ -1,5 +1,5 @@
 use cosmwasm_schema::{cw_serde,QueryResponses};
-use cosmwasm_std::{Coin,Decimal, Addr, Uint128};
+use cosmwasm_std::{Coin,Decimal, Addr};
 use crate::state::{RateDistribution,MysteryBox};
 
 #[cw_serde]
@@ -108,9 +108,6 @@ pub enum AurandExecuteMsg {
 #[cw_serde]
 #[derive(QueryResponses)]
 pub enum QueryMsg {
-    #[returns(Option<RateDistribution>)]
-    GetRateDistribution {},
-
     #[returns(Option<MysteryBox>)]
     GetMysteryBoxInformation {},
 

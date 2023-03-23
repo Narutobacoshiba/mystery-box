@@ -714,18 +714,9 @@ fn execute_withdraw(
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     // TODO: add query for MarketplaceInfo here
     match msg {
-        QueryMsg::GetRateDistribution{} => to_binary(&query_rate_distribution(deps)?),
         QueryMsg::GetMysteryBoxInformation{} => to_binary(&query_mystery_box_information(deps)?),
         QueryMsg::GetMysteryBoxHistoryById { id } => to_binary(&query_mystery_box_history_by_id(deps, id)?),
         QueryMsg::GetLinkedAddres{} => to_binary(&query_linked_address(deps)?),
-    }
-}
-
-pub fn query_rate_distribution(deps: Deps) -> StdResult<Option<RateDistribution>> {
-    if let Some(mystery_box) = MYSTERY_BOX.may_load(deps.storage)? {
-        return Ok(Some(mystery_box.rate_distribution));
-    }else{
-        return Ok(None)
     }
 }
 

@@ -70,7 +70,7 @@ const MAX_EXPONENT: u32 = 116u32;
 /// 
 /// n: number of rarity's supply
 /// 
-/// slip_rate: how fast the rate modify will change when n change
+/// slip_rate: the magnitude of the difference between rate reductions when applying rate_modifier
 /// 
 /// RATE_MODIFY_EXPONENT: increase rate modify impact
 fn rate_modifier(n: u32, slip_rate: u32) -> Result<Decimal, ContractError> {
@@ -122,7 +122,7 @@ impl RateDistribution {
         let mut distribution: RateDistribution = RateDistribution {
             vec: Vec::new()
         };
-
+        
         // total rate of all item type
         let mut total_rate = zero;
         for item_msg in init_distribution.vec.iter() {
