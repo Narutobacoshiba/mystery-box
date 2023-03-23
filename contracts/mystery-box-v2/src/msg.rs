@@ -1,6 +1,6 @@
 use cosmwasm_schema::{cw_serde,QueryResponses};
 use cosmwasm_std::{Coin,Decimal, Addr};
-use crate::state::{RateDistribution,MysteryBox};
+use crate::state::MysteryBox;
 
 #[cw_serde]
 pub struct InstantiateMsg {
