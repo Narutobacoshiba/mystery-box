@@ -40,11 +40,6 @@ pub enum ExecuteMsg {
     /// buy a mystery box
     MintBox {},
 
-    /*/// burn a mystery box and get refund if success
-    BurnBox {
-        token_id: String,
-    }, */
-
     /// generate a mystery box
     CreateMysteryBox {
         box_info: BoxInfo,
@@ -63,6 +58,11 @@ pub enum ExecuteMsg {
         randomness: Vec<i32>
     },
 
+    // Re-request randomness for opening of box with token_id
+    ReRequestRandomness {
+        token_id: String,
+    },
+
     /// withdraw coin
     Withdraw{
         amount: Coin,
@@ -72,28 +72,55 @@ pub enum ExecuteMsg {
 
 #[cw_serde]
 pub struct BoxInfo {
-    pub name: String,
-    pub description: String,
-    pub start_time: String,
-    pub end_time: String,
-    pub total_supply: u64,
+    pub name: String, // name of mystery box event
+
+    pub description: String, // some information about mystery box event
+
+    pub start_time: String, // utc time format "YY-MM-DD hh:mm:ssZ"
+
+    pub end_time: String, // it's required that start_time < end_time
+
+    pub total_supply: u64, // total number of NFTs uri
+
+	// 'true' if you want NFTs uri map 1-1 with Item NFTs supply. 
+	// Otherwish NFTs uri can be used to generate multiple NFTs
+	pub replacement: bool, 
+
+	// max Item NFTs supply, it is generated from NFTs uri with different rate
+	// if replacement set to 'true', max_item_supply must <= total_supply
+	// if not set, it will be almost limitless (u64::MAX)
     pub max_item_supply: Option<u64>,
+
+		// price of one box
     pub price: Coin
 }
 
-//
 #[cw_serde]
 pub struct ItemTypeMsg {
-    pub name: String,
+    pub name: String, // name of item type (e.g 'supper rare', 'rare', 'limited')
+  
+    // rate at which a user can mint an item of this type
+    // 0 <= rate <= 1
     pub rate: Decimal,
-    pub slip_rate: u32,
-    pub supply: u32,
-} 
+  
+    // the magnitude of the difference between rate reductions when applying rate_modifier
+    // when set to 0, the difference between rate reductions is zero. Means the item rate will always be the same
+    pub slip_rate: u32, 
+  
+    pub supply: u32, // maximum number of item that can be minted
+}
 
 #[cw_serde]
 pub struct RateDistributionMsg {
-    pub vec: Vec<ItemTypeMsg>,
+  pub vec: Vec<ItemTypeMsg>, // list of all type of items, must 0 <= total rate <= 1
+      
+    // name of default type 
+    // if not set, it's will be 'common'
+    // it's rate equal to one minus the sum of the rates of all of the above and not apply rate_modifier
+    // its supply is almost limitless (u64::MAX)
+    pub default_type: Option<String>
 }
+
 
 #[cw_serde]
 pub enum AurandExecuteMsg {

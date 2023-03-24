@@ -1,5 +1,5 @@
 [package]
-name = "cw721"
+name = "cw721-box"
 version = "0.1.0"
 authors = ["Narutobacoshiba <haphapbk29@gmail.com>"]
 edition = "2021"

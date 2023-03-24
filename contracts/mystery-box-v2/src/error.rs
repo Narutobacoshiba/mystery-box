@@ -71,6 +71,12 @@ pub enum ContractError {
 
     #[error("SoldOut")]
     SoldOut{},
+
+    #[error("JobNotExist")]
+    JobNotExist{},
+
+    #[error("InvalidCondition")]
+    InvalidCondition{},
     
     #[error("Custom Error val: {val:?}")]
     CustomError { val: String },

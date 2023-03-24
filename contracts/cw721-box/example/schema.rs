@@ -1,6 +1,6 @@
 use cosmwasm_schema::write_api;
 
-use cw721::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg};
+use cw721_box::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg};
 
 fn main() {
     write_api! {

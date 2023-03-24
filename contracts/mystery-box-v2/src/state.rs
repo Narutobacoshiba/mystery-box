@@ -74,10 +74,12 @@ const MAX_EXPONENT: u32 = 116u32;
 /// 
 /// RATE_MODIFY_EXPONENT: increase rate modify impact
 fn rate_modifier(n: u32, slip_rate: u32) -> Result<Decimal, ContractError> {
+    // if n (total_supply) is 0, rate will be zero
     if n == 0 {
         return Ok(Decimal::zero());
     }
     
+    // if slip rate is 0, not apply rate_modifier
     if slip_rate == 0 {
         return Ok(Decimal::one());
     }
@@ -226,9 +228,8 @@ impl RateDistribution {
     }
     
     /// calculate current purity of item_type at specified index 
-    ///     purity = (h - c) / (h - l)
-    ///        
-    ///         0 <= purity <= 1 
+    ///     purity = (h - c) / (h - l) (0..1)
+    /// 
     /// 
     /// h: highest rate of an item type
     /// l: lowest rate of an item type
@@ -257,8 +258,15 @@ pub struct MysteryBox {
     pub tokens_id: Vec<u64>,
     pub total_supply: u64,
     pub max_item_supply: u64,
+    pub replacement: bool,
     pub price: Coin,
     pub created_time: Timestamp,
+}
+
+impl  MysteryBox {
+    pub fn remove_token_id(&mut self, index: usize) {
+        self.tokens_id.swap_remove(index);
+    }
 }
 
 pub const MYSTERY_BOX: Item<MysteryBox> = Item::new("mystery box");
@@ -267,9 +275,9 @@ pub const MYSTERY_BOX_HISTORY: Map<String, MysteryBox> = Map::new("mystery box h
 
 #[cw_serde]
 pub struct PurchasedBox {
-    pub buyer: Addr,
-    pub purchase_time: Timestamp,
     pub is_opened: bool,
+    pub open_time: Option<Timestamp>,
+    pub is_received_randomness: bool,
 }
 
 pub const PURCHASED_BOXES: Map<String, PurchasedBox> = Map::new("purchased boxes");

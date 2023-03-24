@@ -3,20 +3,20 @@ use cosmwasm_std::entry_point;
 use cosmwasm_std::{
     to_binary, Binary, Deps, DepsMut, Env, Addr, Api, SubMsg, QueryRequest,
     MessageInfo, Response, StdResult, WasmMsg, ReplyOn, WasmQuery,
-    Reply, Timestamp, Uint128, Coin, BankMsg, Empty
+    Reply, Timestamp, Uint128, Coin, BankMsg
 };
 use cw2::set_contract_version;
 use cw721::{Cw721QueryMsg, Expiration as Cw721Expiration};
-use cw721_base::MintMsg;
 use cw721_rarity::{
+    MintMsg as Cw721RarityMintMsg,
     ExecuteMsg as Cw721RarityExecuteMsg,
     InstantiateMsg as Cw721RarityInstantiateMsg,
     Metadata as Cw721RarityMetadata,
 };
-use cw721_base::{
+use cw721_box::{
+    MintMsg as Cw721MintMsg,
     InstantiateMsg as Cw721InstantiateMsg,
-    ExecuteMsg as Cw721ExecuteMsg,
-    Extension as Cw721Extension,
+    ExecuteMsg as Cw721ExecuteMsg
 };
 use cw_utils::parse_reply_instantiate_data;
 
@@ -43,9 +43,11 @@ const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const INSTANTIATE_BOX_NFT_REPLY_ID: u64 = 1;
 const INSTANTIATE_ITEM_NFT_REPLY_ID: u64 = 2;
 
-const NUMBER_OF_RANDOM: u32 = 1u32;
+const NUMBER_OF_RANDOM: u32 = 2u32;
 const MIN_RANGE_RANDOM: i32 = 0i32;
 const MAX_RANGE_RANDOM: i32 = 10000i32;
+
+const SECONDS_PER_HOUR: u64 = 3600u64;
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -169,6 +171,10 @@ pub fn execute(
             randomness,
         } => execute_receive_hex_randomness(deps, info, request_id, randomness),
 
+        ExecuteMsg::ReRequestRandomness {
+            token_id
+        } => execute_re_request_randomness(deps, info, env, token_id),
+
         ExecuteMsg::Withdraw {
             amount,
             receiver,
@@ -218,6 +224,7 @@ fn execute_create_mystery_box(
         end_time,
         total_supply,
         max_item_supply,
+        replacement,
         price
     } = box_info;
 
@@ -249,6 +256,7 @@ fn execute_create_mystery_box(
         rate_distribution,  
         tokens_id,
         total_supply,
+        replacement,
         price,
         id: id.clone(),
         name: name.clone(),
@@ -374,7 +382,7 @@ fn execute_mint_box(
     // create mint message NFT for the sender
     let mint_msg = WasmMsg::Execute {
         contract_addr: box_supplier.to_string(),
-        msg: to_binary(&Cw721ExecuteMsg::<Cw721Extension, Empty>::Mint(MintMsg {
+        msg: to_binary(&Cw721ExecuteMsg::Mint(Cw721MintMsg {
             token_id: token_id.clone(),
             owner: info.sender.to_string(),
             token_uri: None,
@@ -389,9 +397,9 @@ fn execute_mint_box(
 
     // update purchased box history
     PURCHASED_BOXES.save(deps.storage, token_id.clone(), &PurchasedBox { 
-        buyer: info.sender.clone(), 
-        purchase_time: block_time, 
-        is_opened: false 
+        is_opened: false,
+        open_time: None,
+        is_received_randomness: false,
     })?;
 
     Ok(Response::new().add_message(mint_msg)
@@ -431,15 +439,10 @@ fn execute_open_box(
         return Err(ContractError::TokenNotRecognized{});
     }
     let PurchasedBox{
-        buyer,
-        purchase_time,
-        is_opened
+        is_opened,
+        open_time: _,
+        is_received_randomness
     } = PURCHASED_BOXES.load(deps.storage, token_id.clone())?;
-
-    // check if user is buyer
-    if buyer != info.sender {
-        return Err(ContractError::Unauthorized{});
-    }
 
     // check if the box has been opened
     if is_opened {
@@ -476,7 +479,7 @@ fn execute_open_box(
         Err(_) => {
             return Err(ContractError::Unauthorized {});
         }
-    }
+    };
 
     // check that user approves this contract to manage this token
     // for now, we require never expired approval
@@ -504,14 +507,14 @@ fn execute_open_box(
         }
     }
 
-    // generate job id for receiving randomness
-    let job_id = token_id.clone();
+    // generate request id for receiving randomness
+    let request_id = token_id.clone();
     
     // request randomness from aurand contract
     let random_msg = WasmMsg::Execute {
         contract_addr: config.aurand_address.to_string(),
         msg: to_binary(&AurandExecuteMsg::RequestIntRandomness { 
-                        request_id: job_id.clone(),
+                        request_id: request_id.clone(),
                         num: NUMBER_OF_RANDOM,
                         min: MIN_RANGE_RANDOM,
                         max: MAX_RANGE_RANDOM,
@@ -521,28 +524,28 @@ fn execute_open_box(
 
     let burn_msg = WasmMsg::Execute {
         contract_addr: box_supplier.to_string(),
-        msg: to_binary(&Cw721ExecuteMsg::<Cw721Extension, Empty>::Burn{
+        msg: to_binary(&Cw721ExecuteMsg::Burn{
             token_id: token_id.clone()
         })?,
         funds: vec![],
     };
 
     // save request open box job, wait for randomness
-    JOBS.save(deps.storage, job_id.clone(), &Job{
+    JOBS.save(deps.storage, request_id.clone(), &Job{
         sender: info.sender,
     })?;
 
     PURCHASED_BOXES.save(deps.storage, token_id.clone(), &PurchasedBox { 
-        purchase_time,
-        buyer: buyer.clone(), 
-        is_opened: true
+        is_opened: true,
+        open_time: Some(block_time),
+        is_received_randomness
     })?;
 
     Ok(Response::new()
         .add_message(random_msg)
         .add_message(burn_msg)
         .add_attribute("action","open_box")
-        .add_attribute("job_id",job_id)
+        .add_attribute("request_id",request_id)
         .add_attribute("token_id", token_id))
 }
 
@@ -579,37 +582,43 @@ fn execute_receive_hex_randomness(
     }
 
     // get job by request id
-    let Job{sender}= JOBS.load(deps.storage, request_id.clone())?;
-
+    let Job{sender}= if let Some(job) = JOBS.may_load(deps.storage, request_id.clone())?{
+        job
+    }else{
+        return Err(ContractError::JobNotExist{});
+    };
+    
     // request id is also id for user's purchased box
     // it will be use to provide unique token id for nft item
     let item_token_id = request_id.clone();
 
-    // check if sender already buy an item with item_token_id as id
-    // and it was opened
-    if let Some(purchased_box) = PURCHASED_BOXES.may_load(deps.storage, item_token_id.clone())?{
-        if purchased_box.buyer != sender.clone(){
-            return Err(ContractError::Unauthorized{});
-        }
-        if !purchased_box.is_opened {
+    // check if a box with an ID exists and hasn't been opened
+    let purchased_box = if let Some(pb) = PURCHASED_BOXES.may_load(
+        deps.storage, 
+        item_token_id.clone()
+    )?{
+        if !pb.is_opened {
             return Err(ContractError::BoxNotOpened{})
         }
+        pb
     }else{
         return Err(ContractError::TokenNotRecognized{});
-    }
+    };
 
     // check if randomness valid
-    if randomness.len() != 1 || randomness[0] < MIN_RANGE_RANDOM || randomness[0] > MAX_RANGE_RANDOM {
+    if randomness.len() != 2 || 
+    randomness[0] < MIN_RANGE_RANDOM || randomness[0] > MAX_RANGE_RANDOM ||
+    randomness[1] < MIN_RANGE_RANDOM || randomness[1] > MAX_RANGE_RANDOM {
         return Err(ContractError::InvalidRandomness{});
     }
 
     // randomness received from aurand contract 
     // it between MIN_RANGE_RANDOM..MAX_RANGE_RANDOM
-    let random_index = randomness[0] as usize;
+    let (random_type, random_index) = (randomness[0] as usize, randomness[1] as usize);
     
     // get index of item_type based on aurand randomness
     let index = mystery_box.rate_distribution.get_item_type_index(
-        random_index as u128, 
+        random_type as u128, 
         MAX_RANGE_RANDOM as u128
     )?;
 
@@ -631,10 +640,17 @@ fn execute_receive_hex_randomness(
     // get item token id by index
     let token_id = tokens_id[tokens_id_index];
 
+    // prefix_uri of NFTs resource collection
     let prefix_uri = mystery_box.prefix_uri.clone();
     
     // token uri made by combining prefix_uri and token_id
     let unique_token_uri = format!("{}{}",prefix_uri.unwrap(),token_id);
+
+    // if replacement == true, replace selected uri from tokens_id
+    // to make all minted Item NFTs unique
+    if mystery_box.replacement {
+        mystery_box.remove_token_id(tokens_id_index);
+    }
 
     // cw721rarity metadata
     let extension = Some(Cw721RarityMetadata {
@@ -646,7 +662,7 @@ fn execute_receive_hex_randomness(
     // create mint message NFT for the sender
     let mint_msg = WasmMsg::Execute {
         contract_addr: item_supplier.to_string(),
-        msg: to_binary(&Cw721RarityExecuteMsg::Mint(MintMsg {
+        msg: to_binary(&Cw721RarityExecuteMsg::Mint(Cw721RarityMintMsg {
             token_id: item_token_id.clone(), // unique token id
             owner: sender.clone().to_string(),
             token_uri: Some(unique_token_uri.clone()), // unique token uri
@@ -656,12 +672,66 @@ fn execute_receive_hex_randomness(
     };
 
     MYSTERY_BOX.save(deps.storage, &mystery_box)?;
+    PURCHASED_BOXES.save(deps.storage, item_token_id.clone(),&PurchasedBox{ 
+        is_opened: true,
+        open_time: purchased_box.open_time,
+        is_received_randomness: true,
+    })?;
 
     Ok(Response::new().add_message(mint_msg)
                 .add_attribute("action", "receive_hex_randomness")
                 .add_attribute("token_id", item_token_id)
                 .add_attribute("token_uri", unique_token_uri)
                 .add_attribute("minter", sender))
+}
+
+fn execute_re_request_randomness(
+    deps: DepsMut,
+    info: MessageInfo,
+    env: Env,
+    token_id: String
+) -> Result<Response, ContractError> {
+    // check if box with id exist
+    if !PURCHASED_BOXES.has(deps.storage, token_id.clone()) {
+        return Err(ContractError::TokenNotRecognized{});
+    }
+    let PurchasedBox{
+        is_opened,
+        open_time,
+        is_received_randomness
+    } = PURCHASED_BOXES.load(deps.storage, token_id.clone())?;
+
+    // only allow to re-request randomness if box was opened but not yet receive randomness
+    if !(is_opened == true && is_received_randomness == false) {
+        return Err(ContractError::InvalidCondition{});
+    }
+
+    let open_time = open_time.unwrap();
+    let block_time = env.block.time;
+
+    // only allow to re-request randomness if box was opened more than 1 hour ago
+    if block_time < open_time.plus_seconds(SECONDS_PER_HOUR) {
+        return Err(ContractError::InvalidCondition{});
+    }
+
+    // generate request id for receiving randomness
+    let request_id = token_id.clone();
+    
+    // request randomness from aurand contract
+    let random_msg = WasmMsg::Execute {
+        contract_addr: CONFIG.load(deps.storage)?.aurand_address.to_string(),
+        msg: to_binary(&AurandExecuteMsg::RequestIntRandomness { 
+                        request_id: request_id.clone(),
+                        num: NUMBER_OF_RANDOM,
+                        min: MIN_RANGE_RANDOM,
+                        max: MAX_RANGE_RANDOM,
+                    })?,
+        funds: info.funds,
+    };
+
+    Ok(Response::new().add_message(random_msg)
+        .add_attribute("action", "request_randomness")
+        .add_attribute("token_id", token_id))
 }
 
 fn execute_withdraw(
