@@ -49,10 +49,6 @@ impl ItemType {
     }
 }
 
-#[cw_serde]
-pub struct RateDistribution {
-    pub vec: Vec<ItemType>,
-}
 
 /// random number (recommend 1.5 - 3.0)
 const E: &str = "1.5";
@@ -116,18 +112,24 @@ fn rate_modifier(n: u32, slip_rate: u32) -> Result<Decimal, ContractError> {
     Ok(m)
 }
 
+
+#[cw_serde]
+pub struct RateDistribution {
+    pub vec: Vec<ItemType>,
+}
+
 impl RateDistribution {
     /// init rate distribution
-    pub fn new(init_distribution: RateDistributionMsg, default_type: Option<String>) -> Result<RateDistribution,ContractError> {
+    pub fn new(init_rate_distribution: RateDistributionMsg) -> Result<RateDistribution,ContractError> {
         let one = Decimal::one();
         let zero = Decimal::zero();
-        let mut distribution: RateDistribution = RateDistribution {
+        let mut rate_distribution: RateDistribution = RateDistribution {
             vec: Vec::new()
         };
         
         // total rate of all item type
         let mut total_rate = zero;
-        for item_msg in init_distribution.vec.iter() {
+        for item_msg in init_rate_distribution.vec.iter() {
 
             // check if 0 < rate < 1
             if item_msg.rate >= one || item_msg.rate <= zero {
@@ -145,7 +147,7 @@ impl RateDistribution {
                 max_supply: item_msg.supply
             };
 
-            distribution.vec.push(item);
+            rate_distribution.vec.push(item);
 
             // calculate new total_rate
             total_rate = total_rate.checked_add(item_msg.rate)
@@ -160,12 +162,12 @@ impl RateDistribution {
         }
 
         // add default item_type to distribution
-        distribution.vec.push(ItemType::default(default_type));
+        rate_distribution.vec.push(ItemType::default(init_rate_distribution.default_type));
         
         // sort distribution by item_type's max_rate
-        distribution.sort_item_type();
+        rate_distribution.sort_item_type();
 
-        Ok(distribution)
+        Ok(rate_distribution)
     }
 
     /// sort item type by max rate
@@ -187,7 +189,7 @@ impl RateDistribution {
             // because of 0 < item_type.rate < 1 and total rate <= 1, below operation will never fail 
             // calculate lower_bound of this item type
             let range = max_range_decimal * item_type.rate;
-            let lower_bound = current_upper_bound - range.to_uint_ceil().u128(); 
+            let lower_bound = current_upper_bound - range.to_uint_floor().u128(); 
             
             // if random number in range lower_bound..current_upper_bound return current index
             if random_number < current_upper_bound && random_number >= lower_bound {
@@ -237,6 +239,11 @@ impl RateDistribution {
     pub fn purity(&self, index: usize) -> Result<Decimal,ContractError>{
         let item_type = &self.vec[index];
 
+        // purity of item_type with slip rate of 0 is always 0
+        if item_type.slip_rate == 0{
+            return Ok(Decimal::zero());
+        }
+
         let max_rate_modifier = rate_modifier(item_type.max_supply, item_type.slip_rate)?;
         let min_rate_modifier = rate_modifier(1u32, item_type.slip_rate)?;
         let current_rate_modifier = rate_modifier(item_type.supply, item_type.slip_rate)?;
@@ -248,16 +255,16 @@ impl RateDistribution {
 
 #[cw_serde]
 pub struct MysteryBox {
-    pub id: String,
+    pub id: u32,
     pub name: String,
     pub description: String,
     pub start_time: Timestamp,
     pub end_time: Timestamp,
-    pub rate_distribution: RateDistribution,
+    pub rate_distribution: Option<RateDistribution>,
     pub prefix_uri: Option<String>,
     pub tokens_id: Vec<u64>,
     pub total_supply: u64,
-    pub max_item_supply: u64,
+    pub max_minted_box: u64,
     pub replacement: bool,
     pub price: Coin,
     pub created_time: Timestamp,
@@ -271,7 +278,7 @@ impl  MysteryBox {
 
 pub const MYSTERY_BOX: Item<MysteryBox> = Item::new("mystery box");
 
-pub const MYSTERY_BOX_HISTORY: Map<String, MysteryBox> = Map::new("mystery box history"); 
+pub const MYSTERY_BOX_HISTORY: Map<u32, MysteryBox> = Map::new("mystery box history"); 
 
 #[cw_serde]
 pub struct PurchasedBox {

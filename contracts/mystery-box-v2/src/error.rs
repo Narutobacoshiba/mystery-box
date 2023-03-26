@@ -43,13 +43,13 @@ pub enum ContractError {
     InvalidTime{},
 
     #[error("MysteryBoxNotStart")]
-    MysteryBoxNotStart{},
+    MysteryBoxNotStarted{},
 
     #[error("DecimalOperationFail")]
     DecimalOperationFail{},
     
-    #[error("MysteryBoxExpired")]
-    MysteryBoxExpired{},
+    #[error("MysteryBoxEnded")]
+    MysteryBoxEnded{},
 
     #[error("TokenNotRecognized")]
     TokenNotRecognized{},

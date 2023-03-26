@@ -1,6 +1,6 @@
 use cosmwasm_schema::{cw_serde,QueryResponses};
 use cosmwasm_std::{Coin,Decimal, Addr};
-use crate::state::MysteryBox;
+use crate::state::{MysteryBox, PurchasedBox};
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -29,6 +29,7 @@ pub struct InstantiateMsg {
     pub item_supplier_symbol: String,
 }
 
+
 /// Message type for `execute` entry_point
 #[cw_serde]
 pub enum ExecuteMsg {
@@ -42,14 +43,18 @@ pub enum ExecuteMsg {
 
     /// generate a mystery box
     CreateMysteryBox {
-        box_info: BoxInfo,
-        rate_distribution: RateDistributionMsg,
-        default_type: Option<String>
+        box_info: BoxInfo
     },
 
     /// update prefix uri for mystery box
     UpdateMysteryBox {
         prefix_uri: String,
+        rate_distribution: RateDistributionMsg
+    },
+
+    // update source of randomness
+    UpdateConfig {
+        aurand_address: String
     },
 
     /// receive aurand randomness
@@ -80,16 +85,16 @@ pub struct BoxInfo {
 
     pub end_time: String, // it's required that start_time < end_time
 
-    pub total_supply: u64, // total number of NFTs uri
+    pub total_supply: u64, // number of unique uri
 
 	// 'true' if you want NFTs uri map 1-1 with Item NFTs supply. 
 	// Otherwish NFTs uri can be used to generate multiple NFTs
 	pub replacement: bool, 
 
 	// max Item NFTs supply, it is generated from NFTs uri with different rate
-	// if replacement set to 'true', max_item_supply must <= total_supply
+	// if replacement set to 'true', max_minted_box must <= total_supply
 	// if not set, it will be almost limitless (u64::MAX)
-    pub max_item_supply: Option<u64>,
+    pub max_minted_box: Option<u64>,
 
 		// price of one box
     pub price: Coin
@@ -121,7 +126,6 @@ pub struct RateDistributionMsg {
     pub default_type: Option<String>
 }
 
-
 #[cw_serde]
 pub enum AurandExecuteMsg {
     RequestIntRandomness{
@@ -136,11 +140,11 @@ pub enum AurandExecuteMsg {
 #[derive(QueryResponses)]
 pub enum QueryMsg {
     #[returns(Option<MysteryBox>)]
-    GetMysteryBoxInformation {},
+    GetMysteryBoxInformation {id: Option<u32>},
 
-    #[returns(Option<MysteryBox>)]
-    GetMysteryBoxHistoryById {id: String},
-
+    #[returns(Option<PurchasedBox>)]
+    GetBoxStatus {token_id: String},
+    
     #[returns(LinkedArress)]
     GetLinkedAddres {},
 }
